@@ -1,7 +1,6 @@
-// public/app.js
+// public/app.js - Clean, fast client interactions
 
 document.addEventListener("DOMContentLoaded", () => {
-  // Elements
   const searchForm = document.getElementById("search-form");
   const queryInput = document.getElementById("search-query-input");
   const clearBtn = document.getElementById("clear-search-btn");
@@ -9,28 +8,27 @@ document.addEventListener("DOMContentLoaded", () => {
   const btnSpinner = document.getElementById("btn-spinner");
   const btnText = document.getElementById("btn-text");
 
-  const progressSection = document.getElementById("progress-section");
-  const progressStatusText = document.getElementById("progress-status-text");
-  const progressPercent = document.getElementById("progress-percent");
-  const progressBarFill = document.getElementById("progress-bar-fill");
+  const statusBar = document.getElementById("status-bar");
+  const statusMessage = document.getElementById("status-message");
+  const statusCount = document.getElementById("status-count");
 
-  const resultsSection = document.getElementById("results-section");
-  const resultsTitle = document.getElementById("results-title");
-  const resultsQueryLabel = document.getElementById("results-query-label");
-  const filterResultsInput = document.getElementById("filter-results-input");
-  const cardsContainer = document.getElementById("cards-container");
-  const tableContainer = document.getElementById("table-container");
-  const tableBody = document.getElementById("table-body");
+  const resultsPanel = document.getElementById("results-panel");
+  const emptyState = document.getElementById("empty-state");
 
   const statTotalLeads = document.getElementById("stat-total-leads");
   const statTotalEmails = document.getElementById("stat-total-emails");
   const statTotalPhones = document.getElementById("stat-total-phones");
   const statAvgRating = document.getElementById("stat-avg-rating");
 
+  const filterResultsInput = document.getElementById("filter-results-input");
+  const tableWrapper = document.getElementById("table-wrapper");
+  const tableBody = document.getElementById("table-body");
+  const cardsContainer = document.getElementById("cards-container");
+  const viewTableBtn = document.getElementById("view-table-btn");
+  const viewCardsBtn = document.getElementById("view-cards-btn");
+
   const copyEmailsBtn = document.getElementById("copy-emails-btn");
   const downloadCsvBtn = document.getElementById("download-csv-btn");
-  const viewCardsBtn = document.getElementById("view-cards-btn");
-  const viewTableBtn = document.getElementById("view-table-btn");
   const toast = document.getElementById("toast");
 
   // State
@@ -38,117 +36,88 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentQuery = "";
   let selectedMode = "places";
   let selectedCount = 30;
-  let progressInterval = null;
 
-  // Clear button
+  // Clear query button
   clearBtn.addEventListener("click", () => {
     queryInput.value = "";
     queryInput.focus();
   });
 
-  // Preset chips
-  document.querySelectorAll(".preset-chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      queryInput.value = chip.dataset.query;
+  // Esc key clears input
+  queryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      queryInput.value = "";
+    }
+  });
+
+  // Preset queries
+  document.querySelectorAll(".preset-link").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      queryInput.value = btn.dataset.query;
       queryInput.focus();
     });
   });
 
-  // Mode buttons
-  document.querySelectorAll("#mode-segmented-control .segment-btn").forEach((btn) => {
+  // Mode pill buttons
+  document.querySelectorAll("#mode-group .pill-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#mode-segmented-control .segment-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll("#mode-group .pill-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       selectedMode = btn.dataset.mode;
     });
   });
 
-  // Count buttons
-  document.querySelectorAll("#count-segmented-control .segment-btn").forEach((btn) => {
+  // Limit pill buttons
+  document.querySelectorAll("#count-group .pill-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll("#count-segmented-control .segment-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll("#count-group .pill-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       selectedCount = parseInt(btn.dataset.count, 10);
     });
   });
 
-  // View toggle
+  // View switcher (Table / Cards)
+  viewTableBtn.addEventListener("click", () => {
+    viewTableBtn.classList.add("active");
+    viewCardsBtn.classList.remove("active");
+    tableWrapper.classList.remove("hidden");
+    cardsContainer.classList.add("hidden");
+  });
+
   viewCardsBtn.addEventListener("click", () => {
     viewCardsBtn.classList.add("active");
     viewTableBtn.classList.remove("active");
     cardsContainer.classList.remove("hidden");
-    tableContainer.classList.add("hidden");
+    tableWrapper.classList.add("hidden");
   });
 
-  viewTableBtn.addEventListener("click", () => {
-    viewTableBtn.classList.add("active");
-    viewCardsBtn.classList.remove("active");
-    tableContainer.classList.remove("hidden");
-    cardsContainer.classList.add("hidden");
-  });
-
-  // Toast helper
-  function showToast(message) {
-    toast.textContent = message;
+  // Toast notification
+  function showToast(msg) {
+    toast.textContent = msg;
     toast.classList.remove("hidden");
     setTimeout(() => {
       toast.classList.add("hidden");
-    }, 3200);
+    }, 2800);
   }
 
-  // Simulated progress stages
-  function startProgress() {
-    progressSection.classList.remove("hidden");
-    let progress = 10;
-    progressPercent.textContent = `${progress}%`;
-    progressBarFill.style.width = `${progress}%`;
-    progressStatusText.textContent = `Connecting to ${selectedMode === 'places' ? 'Google Places API' : 'Web Engine'}...`;
-
-    const stages = [
-      { at: 25, text: "Scanning business listings & official ratings..." },
-      { at: 45, text: "Extracting addresses, phone numbers, and maps..." },
-      { at: 70, text: "Deep crawling websites in parallel for emails & owners..." },
-      { at: 90, text: "Sorting leads strictly by Google rank #1 to #30..." },
-    ];
-
-    let stageIdx = 0;
-    progressInterval = setInterval(() => {
-      if (progress < 92) {
-        progress += Math.floor(Math.random() * 4) + 2;
-        if (progress > 92) progress = 92;
-        progressPercent.textContent = `${progress}%`;
-        progressBarFill.style.width = `${progress}%`;
-
-        if (stageIdx < stages.length && progress >= stages[stageIdx].at) {
-          progressStatusText.textContent = stages[stageIdx].text;
-          stageIdx++;
-        }
-      }
-    }, 450);
-  }
-
-  function finishProgress() {
-    clearInterval(progressInterval);
-    progressPercent.textContent = "100%";
-    progressBarFill.style.width = "100%";
-    progressStatusText.textContent = "Completed! Results sorted by rank.";
-    setTimeout(() => {
-      progressSection.classList.add("hidden");
-    }, 800);
-  }
-
-  // Submit search
+  // Handle Form Submission
   searchForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const query = queryInput.value.trim();
     if (!query) return;
 
     currentQuery = query;
+
+    // Update UI for loading state
     submitBtn.disabled = true;
     btnSpinner.style.display = "inline-block";
-    btnText.textContent = "Extracting Leads...";
+    btnText.textContent = "Scanning...";
 
-    startProgress();
+    statusBar.classList.remove("hidden");
+    statusMessage.textContent = `Searching ${selectedMode === 'places' ? 'Google Places' : 'live web'} for "${query}"...`;
+    statusCount.textContent = `Targeting ${selectedCount}`;
+
+    emptyState.classList.add("hidden");
 
     try {
       const response = await fetch("/api/scrape", {
@@ -162,152 +131,180 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       if (!response.ok) {
-        throw new Error(`Server returned ${response.status}: ${response.statusText}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
       currentLeads = data.leads || [];
+
       renderResults(currentLeads);
-      showToast(`Successfully extracted ${currentLeads.length} leads!`);
+      showToast(`Extracted ${currentLeads.length} listings in rank order`);
     } catch (err) {
       console.error(err);
-      showToast(`Search error: ${err.message}`);
+      showToast(`Error: ${err.message}`);
+      if (currentLeads.length === 0) {
+        emptyState.classList.remove("hidden");
+      }
     } finally {
-      finishProgress();
+      statusBar.classList.add("hidden");
       submitBtn.disabled = false;
       btnSpinner.style.display = "none";
-      btnText.textContent = "Launch Lead Extraction";
+      btnText.textContent = "Extract";
     }
   });
 
-  // Render results
+  // Render metrics and tables
   function renderResults(leads) {
-    resultsSection.classList.remove("hidden");
-    resultsQueryLabel.textContent = `for "${currentQuery}" (${leads.length} places)`;
+    if (!leads || leads.length === 0) {
+      resultsPanel.classList.add("hidden");
+      emptyState.classList.remove("hidden");
+      return;
+    }
 
-    // Calculate metrics
+    resultsPanel.classList.remove("hidden");
+    emptyState.classList.add("hidden");
+
     let emailCount = 0;
     let phoneCount = 0;
-    let ratingSum = 0;
-    let ratingNum = 0;
+    let totalScore = 0;
+    let scoreCount = 0;
 
     leads.forEach((l) => {
       if (l.email) emailCount++;
       if (l.phone) phoneCount++;
       const r = parseFloat(l.review_rating);
       if (!isNaN(r) && r > 0) {
-        ratingSum += r;
-        ratingNum++;
+        totalScore += r;
+        scoreCount++;
       }
     });
 
     statTotalLeads.textContent = leads.length;
     statTotalEmails.textContent = emailCount;
     statTotalPhones.textContent = phoneCount;
-    statAvgRating.textContent = ratingNum > 0 ? (ratingSum / ratingNum).toFixed(1) : "N/A";
+    statAvgRating.textContent = scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : "—";
 
-    renderCards(leads);
     renderTable(leads);
+    renderCards(leads);
   }
 
-  // Render cards
-  function renderCards(leads) {
-    cardsContainer.innerHTML = "";
+  // Render Table View
+  function renderTable(leads) {
+    tableBody.innerHTML = "";
+
     if (leads.length === 0) {
-      cardsContainer.innerHTML = `<p style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 2rem;">No leads match your filter.</p>`;
+      tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No matching listings found.</td></tr>`;
       return;
     }
 
     leads.forEach((lead) => {
-      const rankMatch = (lead.search_rank || "").match(/\d+/);
-      const rankNum = rankMatch ? parseInt(rankMatch[0], 10) : 99;
-      let rankClass = "rank-other";
-      if (rankNum === 1) rankClass = "rank-1";
-      else if (rankNum === 2) rankClass = "rank-2";
-      else if (rankNum === 3) rankClass = "rank-3";
-
-      const card = document.createElement("div");
-      card.className = "lead-card";
-      card.innerHTML = `
-        <div class="card-header-row">
-          <span class="rank-badge ${rankClass}">${lead.search_rank || "#"}</span>
-          ${lead.review_rating ? `<span class="rating-badge">★ ${lead.review_rating} (${lead.review_count || "0"})</span>` : ""}
-        </div>
-        <h3 class="card-title">${escapeHtml(lead.business_name || "Unknown Business")}</h3>
-        
-        <div class="card-info-list">
-          ${lead.phone ? `
-            <div class="card-info-item">
-              <strong>📞</strong>
-              <span>${escapeHtml(lead.phone)}</span>
-            </div>` : ""
-          }
-          ${lead.email ? `
-            <div class="card-info-item">
-              <strong>✉️</strong>
-              <span style="color: #38bdf8;">${escapeHtml(lead.email)}</span>
-            </div>` : ""
-          }
-          ${lead.owner_name_candidates ? `
-            <div class="card-info-item">
-              <strong>👨‍⚕️</strong>
-              <span style="color: #a78bfa;">${escapeHtml(lead.owner_name_candidates)}</span>
-            </div>` : ""
-          }
-          ${lead.address ? `
-            <div class="card-info-item">
-              <strong>📍</strong>
-              <span>${escapeHtml(lead.address)}</span>
-            </div>` : ""
-          }
-        </div>
-
-        <div class="card-footer">
-          ${lead.website ? `
-            <a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="card-link">
-              Visit Website ↗
-            </a>` : `<span class="meta-chip">Places Only</span>`
-          }
-          ${lead.google_maps_directions ? `
-            <a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="card-link" style="color: #94a3b8;">
-              Google Maps ↗
-            </a>` : ""
-          }
-        </div>
-      `;
-      cardsContainer.appendChild(card);
-    });
-  }
-
-  // Render table
-  function renderTable(leads) {
-    tableBody.innerHTML = "";
-    leads.forEach((lead) => {
       const tr = document.createElement("tr");
+
+      const rankStr = lead.search_rank || "";
+      const rankNum = rankStr.replace("#", "").padStart(2, "0");
+
       tr.innerHTML = `
-        <td><strong style="color: #fff;">${escapeHtml(lead.search_rank || "#")}</strong></td>
-        <td><strong>${escapeHtml(lead.business_name || "")}</strong></td>
-        <td>${lead.review_rating ? `★ ${lead.review_rating}` : "N/A"}</td>
-        <td>${escapeHtml(lead.phone || "—")}</td>
-        <td><span style="color: #38bdf8;">${escapeHtml(lead.email || "—")}</span></td>
-        <td><span style="color: #a78bfa;">${escapeHtml(lead.owner_name_candidates || "—")}</span></td>
-        <td>${escapeHtml(lead.address || "—")}</td>
+        <td class="rank-cell">#${escapeHtml(rankNum)}</td>
         <td>
-          ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="card-link">Link ↗</a>` : "—"}
+          <div class="business-name">${escapeHtml(lead.business_name || "Unknown")}</div>
+        </td>
+        <td>
+          ${lead.review_rating ? `<span class="rating-tag">★ ${escapeHtml(lead.review_rating)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
+        </td>
+        <td style="font-family: var(--font-mono); font-size: 0.78rem;">
+          ${escapeHtml(lead.phone || "—")}
+        </td>
+        <td>
+          ${lead.email ? `<span class="email-tag" title="Click to copy">${escapeHtml(lead.email)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
+        </td>
+        <td>
+          ${lead.owner_name_candidates ? `<span class="owner-tag">${escapeHtml(lead.owner_name_candidates)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
+        </td>
+        <td>
+          <div class="address-cell" title="${escapeHtml(lead.address || '')}">${escapeHtml(lead.address || "—")}</div>
+        </td>
+        <td style="text-align: right; white-space: nowrap;">
+          ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link" title="Visit Website">Web ↗</a>` : ""}
+          ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" title="Google Maps" style="color: var(--text-muted);">Maps ↗</a>` : ""}
         </td>
       `;
+
+      // Click on email in row to copy
+      const emailEl = tr.querySelector(".email-tag");
+      if (emailEl) {
+        emailEl.addEventListener("click", () => {
+          navigator.clipboard.writeText(lead.email).then(() => {
+            showToast(`Copied ${lead.email}`);
+          });
+        });
+      }
+
       tableBody.appendChild(tr);
     });
   }
 
-  // In-table search filter
+  // Render Cards View
+  function renderCards(leads) {
+    cardsContainer.innerHTML = "";
+
+    leads.forEach((lead) => {
+      const card = document.createElement("div");
+      card.className = "card-item";
+
+      const rankStr = lead.search_rank || "";
+      const rankNum = rankStr.replace("#", "").padStart(2, "0");
+
+      card.innerHTML = `
+        <div class="card-item-top">
+          <span style="font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600; color: var(--text-muted);">#${escapeHtml(rankNum)}</span>
+          ${lead.review_rating ? `<span class="rating-tag">★ ${escapeHtml(lead.review_rating)}</span>` : ""}
+        </div>
+        <div class="card-item-title">${escapeHtml(lead.business_name || "Unknown")}</div>
+        <div class="card-details">
+          ${lead.phone ? `
+            <div class="card-row">
+              <span class="card-row-label">Phone</span>
+              <span style="font-family: var(--font-mono);">${escapeHtml(lead.phone)}</span>
+            </div>` : ""
+          }
+          ${lead.email ? `
+            <div class="card-row">
+              <span class="card-row-label">Email</span>
+              <span class="email-tag">${escapeHtml(lead.email)}</span>
+            </div>` : ""
+          }
+          ${lead.owner_name_candidates ? `
+            <div class="card-row">
+              <span class="card-row-label">Doctor</span>
+              <span class="owner-tag">${escapeHtml(lead.owner_name_candidates)}</span>
+            </div>` : ""
+          }
+          ${lead.address ? `
+            <div class="card-row">
+              <span class="card-row-label">Address</span>
+              <span style="color: var(--text-muted); font-size: 0.76rem;">${escapeHtml(lead.address)}</span>
+            </div>` : ""
+          }
+        </div>
+        <div class="card-footer-links">
+          ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link">Website ↗</a>` : "<span></span>"}
+          ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" style="color: var(--text-muted);">Maps ↗</a>` : ""}
+        </div>
+      `;
+
+      cardsContainer.appendChild(card);
+    });
+  }
+
+  // Filter in table
   filterResultsInput.addEventListener("input", (e) => {
     const term = e.target.value.toLowerCase().trim();
     if (!term) {
-      renderCards(currentLeads);
       renderTable(currentLeads);
+      renderCards(currentLeads);
       return;
     }
+
     const filtered = currentLeads.filter((l) => {
       return (
         (l.business_name || "").toLowerCase().includes(term) ||
@@ -317,8 +314,9 @@ document.addEventListener("DOMContentLoaded", () => {
         (l.owner_name_candidates || "").toLowerCase().includes(term)
       );
     });
-    renderCards(filtered);
+
     renderTable(filtered);
+    renderCards(filtered);
   });
 
   // Copy all emails
@@ -339,9 +337,9 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     navigator.clipboard.writeText(emails.join(", ")).then(() => {
-      showToast(`Copied ${emails.length} emails to clipboard!`);
+      showToast(`Copied ${emails.length} emails to clipboard`);
     }).catch(() => {
-      showToast("Clipboard access denied.");
+      showToast("Failed to access clipboard");
     });
   });
 
@@ -352,7 +350,7 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const headers = [
+    const fields = [
       "search_rank",
       "business_name",
       "category",
@@ -366,9 +364,9 @@ document.addEventListener("DOMContentLoaded", () => {
       "google_maps_directions",
     ];
 
-    const rows = [headers.join(",")];
+    const rows = [fields.join(",")];
     currentLeads.forEach((lead) => {
-      const row = headers.map((h) => {
+      const row = fields.map((h) => {
         const val = (lead[h] || "").toString().replace(/"/g, '""');
         return `"${val}"`;
       });
@@ -385,7 +383,7 @@ document.addEventListener("DOMContentLoaded", () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast("Downloaded CSV file successfully!");
+    showToast("CSV exported successfully");
   });
 
   function escapeHtml(str) {
