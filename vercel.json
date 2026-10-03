@@ -1,17 +1,7 @@
 {
   "version": 2,
   "rewrites": [
-    {
-      "source": "/api/(.*)",
-      "destination": "/api/index.py"
-    },
-    {
-      "source": "/",
-      "destination": "/public/index.html"
-    },
-    {
-      "source": "/(.*)",
-      "destination": "/public/$1"
-    }
+    { "source": "/api/scrape", "destination": "/api/scrape.py" },
+    { "source": "/api/(.*)", "destination": "/api/index.py" }
   ]
 }

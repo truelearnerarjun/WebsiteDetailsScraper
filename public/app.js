@@ -91,6 +91,14 @@ document.addEventListener("DOMContentLoaded", () => {
     tableWrapper.classList.add("hidden");
   });
 
+  // Default to cards view on mobile screens
+  if (window.innerWidth <= 640) {
+    viewCardsBtn.classList.add("active");
+    viewTableBtn.classList.remove("active");
+    cardsContainer.classList.remove("hidden");
+    tableWrapper.classList.add("hidden");
+  }
+
   // Toast notification
   function showToast(msg) {
     toast.textContent = msg;
@@ -120,7 +128,7 @@ document.addEventListener("DOMContentLoaded", () => {
     emptyState.classList.add("hidden");
 
     try {
-      const response = await fetch("/api/scrape", {
+      let response = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -130,7 +138,18 @@ document.addEventListener("DOMContentLoaded", () => {
         }),
       });
 
+      // Fallback in case of routing variations
+      if (response.status === 404) {
+        response = await fetch(`/api/scrape?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}`);
+      }
+      if (response.status === 404) {
+        response = await fetch(`/api?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}`);
+      }
+
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("API not found (404). If testing locally, run: python server.py");
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
