@@ -1774,6 +1774,18 @@ def main():
     sort_and_save_csv(output_file, all_results)
     print(f"\n[+] Finished! All {total} results sorted by rank (#1 -> #{total}) and saved to '{output_file}'.")
 
+    # Optional: Sync to Supabase if configured with auto-sync
+    try:
+        import supabase_client
+        if supabase_client.is_configured():
+            cfg = supabase_client.get_supabase_config()
+            if cfg["auto_sync"]:
+                sync_res = supabase_client.upsert_leads(all_results, query=keyword or DEFAULT_SEARCH_KEYWORD)
+                if sync_res.get("success"):
+                    print(f"[+] Synced {sync_res.get('count')} leads to Supabase table '{cfg['table']}'.")
+    except Exception:
+        pass
+
 
 if __name__ == "__main__":
     main()

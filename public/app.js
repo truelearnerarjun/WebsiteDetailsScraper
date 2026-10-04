@@ -33,6 +33,27 @@ document.addEventListener("DOMContentLoaded", () => {
   const downloadCsvBtn = document.getElementById("download-csv-btn");
   const toast = document.getElementById("toast");
 
+  // Supabase Elements
+  const supabaseStatusBtn = document.getElementById("supabase-status-btn");
+  const supabaseStatusLabel = document.getElementById("supabase-status-label");
+  const autoSyncSupabaseInput = document.getElementById("auto-sync-supabase");
+  const saveSupabaseBtn = document.getElementById("save-supabase-btn");
+  const saveSupabaseText = document.getElementById("save-supabase-text");
+  const loadSupabaseBtn = document.getElementById("load-supabase-btn");
+  const supabaseModal = document.getElementById("supabase-modal");
+  const closeSupabaseModalBtn = document.getElementById("close-supabase-modal-btn");
+  const supabaseModalBanner = document.getElementById("supabase-modal-banner");
+  const supabaseModalBannerText = document.getElementById("supabase-modal-banner-text");
+  const supabaseConnectedInfo = document.getElementById("supabase-connected-info");
+  const supabaseInfoUrl = document.getElementById("supabase-info-url");
+  const supabaseInfoTable = document.getElementById("supabase-info-table");
+  const supabaseInfoCount = document.getElementById("supabase-info-count");
+  const modalTestBtn = document.getElementById("modal-test-btn");
+  const modalLoadLeadsBtn = document.getElementById("modal-load-leads-btn");
+  const modalRecheckBtn = document.getElementById("modal-recheck-btn");
+  const copyEnvBtn = document.getElementById("copy-env-btn");
+  const copySqlBtn = document.getElementById("copy-sql-btn");
+
   // State
   let currentLeads = [];
   let currentQuery = "";
@@ -242,13 +263,21 @@ document.addEventListener("DOMContentLoaded", () => {
     const timeoutId = setTimeout(() => controller.abort(), 120000);
 
     try {
-      const getUrl = `/api/scrape?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}&min_rating=${minRating}&max_rating=${maxRating}`;
+      const autoSave = autoSyncSupabaseInput ? autoSyncSupabaseInput.checked : false;
+      const getUrl = `/api/scrape?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}&min_rating=${minRating}&max_rating=${maxRating}&auto_save_supabase=${autoSave}`;
       let response;
       try {
         response = await fetch("/api/scrape", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, count: selectedCount, mode: selectedMode, min_rating: minRating, max_rating: maxRating }),
+          body: JSON.stringify({
+            query,
+            count: selectedCount,
+            mode: selectedMode,
+            min_rating: minRating,
+            max_rating: maxRating,
+            auto_save_supabase: autoSave,
+          }),
           signal: controller.signal,
         });
       } catch (postErr) {
@@ -273,7 +302,12 @@ document.addEventListener("DOMContentLoaded", () => {
       currentLeads = data.leads || [];
 
       renderResults(currentLeads);
-      showToast(`Extracted ${currentLeads.length} places in exact rank order`);
+      if (data.supabase_synced) {
+        showToast(`Extracted ${currentLeads.length} places (auto-synced to Supabase)`);
+        checkSupabaseStatus();
+      } else {
+        showToast(`Extracted ${currentLeads.length} places in exact rank order`);
+      }
     } catch (err) {
       console.error("Search error:", err);
       const msg = err.name === "AbortError"
@@ -744,4 +778,189 @@ document.addEventListener("DOMContentLoaded", () => {
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#039;");
   }
+
+  // -------------------------------------------------------------
+  // Supabase Database Integration Handlers
+  // -------------------------------------------------------------
+
+  async function checkSupabaseStatus(showToastFeedback = false) {
+    if (!supabaseStatusBtn) return;
+    try {
+      const res = await fetch("/api/supabase/status");
+      const data = await res.json();
+
+      if (data.connected) {
+        supabaseStatusBtn.classList.remove("not-configured");
+        supabaseStatusBtn.classList.add("connected");
+        if (supabaseStatusLabel) supabaseStatusLabel.textContent = "Supabase Active";
+
+        if (supabaseModalBanner) {
+          supabaseModalBanner.className = "modal-status-banner connected";
+          if (supabaseModalBannerText) {
+            supabaseModalBannerText.textContent = `Connected to Supabase table '${data.table || "leads"}'`;
+          }
+        }
+        if (supabaseConnectedInfo) supabaseConnectedInfo.classList.remove("hidden");
+        if (supabaseInfoUrl) supabaseInfoUrl.textContent = data.url || "—";
+        if (supabaseInfoTable) supabaseInfoTable.textContent = data.table || "leads";
+        if (supabaseInfoCount) {
+          supabaseInfoCount.textContent = data.total_leads !== null && data.total_leads !== undefined ? data.total_leads : "Ready";
+        }
+
+        if (showToastFeedback) showToast("✓ Connected to Supabase successfully!");
+      } else {
+        supabaseStatusBtn.classList.remove("connected");
+        supabaseStatusBtn.classList.add("not-configured");
+        if (supabaseStatusLabel) supabaseStatusLabel.textContent = "Supabase Setup";
+
+        if (supabaseModalBanner) {
+          supabaseModalBanner.className = data.needs_schema ? "modal-status-banner not-configured" : "modal-status-banner not-configured";
+          if (supabaseModalBannerText) {
+            supabaseModalBannerText.textContent = data.error || "Supabase credentials not configured in .env";
+          }
+        }
+        if (supabaseConnectedInfo) supabaseConnectedInfo.classList.add("hidden");
+
+        if (showToastFeedback) showToast(data.error || "Supabase not connected. Check .env");
+      }
+    } catch (err) {
+      if (supabaseStatusBtn) {
+        supabaseStatusBtn.classList.remove("connected");
+        supabaseStatusBtn.classList.add("not-configured");
+      }
+    }
+  }
+
+  function openSupabaseModal() {
+    if (supabaseModal) {
+      supabaseModal.classList.remove("hidden");
+      checkSupabaseStatus();
+    }
+  }
+
+  function closeSupabaseModal() {
+    if (supabaseModal) {
+      supabaseModal.classList.add("hidden");
+    }
+  }
+
+  if (supabaseStatusBtn) supabaseStatusBtn.addEventListener("click", openSupabaseModal);
+  if (closeSupabaseModalBtn) closeSupabaseModalBtn.addEventListener("click", closeSupabaseModal);
+  if (modalTestBtn) modalTestBtn.addEventListener("click", () => checkSupabaseStatus(true));
+  if (modalRecheckBtn) modalRecheckBtn.addEventListener("click", () => checkSupabaseStatus(true));
+
+  if (supabaseModal) {
+    supabaseModal.addEventListener("click", (e) => {
+      if (e.target === supabaseModal) closeSupabaseModal();
+    });
+  }
+
+  // Escape key closes modal
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && supabaseModal && !supabaseModal.classList.contains("hidden")) {
+      closeSupabaseModal();
+    }
+  });
+
+  // Copy .env template
+  if (copyEnvBtn) {
+    copyEnvBtn.addEventListener("click", async () => {
+      const code = document.getElementById("env-sample-code")?.innerText || "";
+      try {
+        await navigator.clipboard.writeText(code);
+        const originalText = copyEnvBtn.textContent;
+        copyEnvBtn.textContent = "✓ Copied!";
+        setTimeout(() => { copyEnvBtn.textContent = originalText; }, 2000);
+        showToast("Copied Supabase .env template to clipboard");
+      } catch (err) {
+        showToast("Could not copy to clipboard");
+      }
+    });
+  }
+
+  // Copy SQL schema
+  if (copySqlBtn) {
+    copySqlBtn.addEventListener("click", async () => {
+      try {
+        const res = await fetch("/api/supabase/schema");
+        const sql = await res.text();
+        await navigator.clipboard.writeText(sql);
+        const originalText = copySqlBtn.textContent;
+        copySqlBtn.textContent = "✓ SQL Copied!";
+        setTimeout(() => { copySqlBtn.textContent = originalText; }, 2500);
+        showToast("Copied supabase_schema.sql to clipboard! Paste into Supabase SQL Editor.");
+      } catch (err) {
+        showToast("Could not fetch SQL schema to copy");
+      }
+    });
+  }
+
+  // Save current leads to Supabase
+  if (saveSupabaseBtn) {
+    saveSupabaseBtn.addEventListener("click", async () => {
+      if (!currentLeads || currentLeads.length === 0) {
+        showToast("No leads to save. Extract leads first!");
+        return;
+      }
+      saveSupabaseBtn.disabled = true;
+      if (saveSupabaseText) saveSupabaseText.textContent = "Saving...";
+
+      try {
+        const res = await fetch("/api/supabase/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ leads: currentLeads, query: currentQuery }),
+        });
+        const result = await res.json();
+        if (res.ok && result.success) {
+          showToast(`⚡ Saved ${result.count} leads to Supabase table '${result.table}'!`);
+          checkSupabaseStatus();
+        } else if (result.needs_schema) {
+          showToast("⚠️ Table 'leads' not found in Supabase. Please run the SQL schema.");
+          openSupabaseModal();
+        } else if (!result.configured) {
+          showToast("⚠️ Supabase not configured in .env. Click Supabase to set up.");
+          openSupabaseModal();
+        } else {
+          showToast(`Supabase save error: ${result.error || "Unknown error"}`);
+        }
+      } catch (err) {
+        showToast(`Network error: ${err.message}`);
+      } finally {
+        saveSupabaseBtn.disabled = false;
+        if (saveSupabaseText) saveSupabaseText.textContent = "Save to Supabase";
+      }
+    });
+  }
+
+  // Load leads from Supabase
+  async function loadLeadsFromSupabase() {
+    closeSupabaseModal();
+    showToast("Fetching stored leads from Supabase...");
+    try {
+      const res = await fetch("/api/supabase/leads?limit=100");
+      const data = await res.json();
+      if (res.ok && data.leads && data.leads.length > 0) {
+        currentLeads = data.leads;
+        currentQuery = "Supabase Database";
+        resultsPanel.classList.remove("hidden");
+        emptyState.classList.add("hidden");
+        renderResults(currentLeads);
+        showToast(`Loaded ${data.leads.length} leads from Supabase!`);
+      } else if (data.leads && data.leads.length === 0) {
+        showToast("No leads found in Supabase yet. Extract leads and click 'Save to Supabase'!");
+      } else {
+        showToast("Could not load leads from Supabase. Check configuration.");
+        openSupabaseModal();
+      }
+    } catch (err) {
+      showToast(`Error fetching leads from Supabase: ${err.message}`);
+    }
+  }
+
+  if (loadSupabaseBtn) loadSupabaseBtn.addEventListener("click", loadLeadsFromSupabase);
+  if (modalLoadLeadsBtn) modalLoadLeadsBtn.addEventListener("click", loadLeadsFromSupabase);
+
+  // Initialize Supabase status on page load
+  checkSupabaseStatus();
 });

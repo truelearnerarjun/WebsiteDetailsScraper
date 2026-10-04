@@ -57,3 +57,30 @@ Configure default settings inside `scraper.py` (lines 40–54) and run:
 python scraper.py
 ```
 Output results will be saved in a sorted `.csv` file named after your keyword.
+
+---
+
+## Supabase Database Integration
+
+WebsiteDetailsScraper includes built-in Supabase integration to persist, deduplicate, and query your scraped leads in PostgreSQL.
+
+### 1. Set Up Supabase Table
+1. Open your project in the [Supabase Dashboard](https://supabase.com/dashboard).
+2. Navigate to **SQL Editor** in the left sidebar.
+3. Open `supabase_schema.sql` from this repository, copy its contents, paste them into the SQL editor, and click **Run**.
+4. This creates the `leads` table with all 25 fields, unique conflict resolution index on `identity_key`, performance indexes, and RLS policies.
+
+### 2. Configure Credentials in `.env`
+Add your Supabase project URL and API key to `.env`:
+```env
+SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_KEY=your-anon-or-service-role-key
+SUPABASE_TABLE=leads
+SUPABASE_AUTO_SYNC=true
+```
+
+### 3. Usage
+- **Save to Supabase Button**: In the Web UI, click the **⚡ Save to Supabase** button to sync current leads on demand.
+- **Auto-Sync Checkbox**: Check **Auto-save to Supabase** before searching to automatically sync every result.
+- **Load Saved Leads**: Click **📂 Saved in Supabase** to load your database leads directly into the interface with full filtering and sorting.
+- **Conflict-free Deduplication**: Uses Postgres `identity_key` upserts (`domain:xxx`, `phone:xxx`, or `name-address:xxx`) so repeated scrapes update records without duplicates.

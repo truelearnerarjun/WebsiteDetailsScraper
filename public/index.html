@@ -28,6 +28,10 @@
         </div>
       </div>
       <div class="nav-right">
+        <button type="button" id="supabase-status-btn" class="supabase-status-btn" title="Supabase Database Status & Settings">
+          <span class="supabase-dot"></span>
+          <span id="supabase-status-label">Supabase</span>
+        </button>
         <span class="system-status">
           <span class="status-indicator"></span>
           <span>Engine ready</span>
@@ -133,6 +137,10 @@
                   <input type="checkbox" id="filter-open-now">
                   <span>Open now</span>
                 </label>
+                <label class="clean-checkbox" title="Automatically save every scraped lead into your Supabase table">
+                  <input type="checkbox" id="auto-sync-supabase">
+                  <span>Auto-save to Supabase</span>
+                </label>
               </div>
             </div>
 
@@ -214,6 +222,23 @@
               <span>Copy Emails</span>
             </button>
 
+            <button type="button" id="save-supabase-btn" class="secondary-btn" title="Save current leads to Supabase">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+              </svg>
+              <span id="save-supabase-text">Save to Supabase</span>
+            </button>
+
+            <button type="button" id="load-supabase-btn" class="secondary-btn" title="Load previously saved leads from Supabase">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="22 12 16 12 14 15 10 15 8 12 2 12"></polyline>
+                <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path>
+              </svg>
+              <span>Saved in Supabase</span>
+            </button>
+
             <button type="button" id="download-csv-btn" class="primary-action-btn" title="Download clean CSV">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
@@ -270,6 +295,83 @@
         <p class="empty-desc">Enter a search keyword above or pick a preset to discover up to 30 ranked local listings with verified contact details.</p>
       </section>
     </main>
+
+    <!-- Supabase Connection & Setup Modal -->
+    <div id="supabase-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="supabase-modal-title">
+      <div class="modal-card">
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <span class="modal-icon">⚡</span>
+            <h2 id="supabase-modal-title">Supabase Integration</h2>
+          </div>
+          <button type="button" id="close-supabase-modal-btn" class="modal-close-btn" aria-label="Close dialog">✕</button>
+        </div>
+        
+        <div class="modal-body">
+          <!-- Connection Status Banner -->
+          <div id="supabase-modal-banner" class="modal-status-banner checking">
+            <span class="status-indicator"></span>
+            <span id="supabase-modal-banner-text">Checking Supabase connection...</span>
+          </div>
+
+          <!-- Connected Info Box -->
+          <div id="supabase-connected-info" class="modal-info-box hidden">
+            <div class="info-row">
+              <span class="info-label">Project URL:</span>
+              <span class="info-val mono" id="supabase-info-url">—</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Table:</span>
+              <span class="info-val mono" id="supabase-info-table">leads</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Total Leads Saved:</span>
+              <span class="info-val highlight" id="supabase-info-count">0</span>
+            </div>
+            <div class="modal-actions-inline">
+              <button type="button" id="modal-test-btn" class="secondary-btn">↻ Test Connection</button>
+              <button type="button" id="modal-load-leads-btn" class="primary-action-btn">Load Leads into Table</button>
+            </div>
+          </div>
+
+          <!-- Setup Instructions (Always available) -->
+          <div id="supabase-setup-guide" class="setup-guide">
+            <h3 class="setup-section-title">Supabase Quick Setup</h3>
+            
+            <div class="setup-step">
+              <div class="step-num">1</div>
+              <div class="step-content">
+                <strong>Add your credentials to <code class="mono">.env</code> in this project:</strong>
+                <div class="code-preview-wrap">
+                  <pre><code id="env-sample-code">SUPABASE_URL=https://your-project-id.supabase.co
+SUPABASE_KEY=your-anon-or-service-role-key
+SUPABASE_TABLE=leads
+SUPABASE_AUTO_SYNC=true</code></pre>
+                  <button type="button" id="copy-env-btn" class="copy-snippet-btn">Copy .env</button>
+                </div>
+                <p class="step-hint">Find these in Supabase Dashboard → Project Settings → API.</p>
+              </div>
+            </div>
+
+            <div class="setup-step">
+              <div class="step-num">2</div>
+              <div class="step-content">
+                <strong>Run the SQL schema in Supabase SQL Editor:</strong>
+                <p class="step-desc">Creates the <code class="mono">leads</code> table with contactability scores, deduplication indexes, and RLS policies.</p>
+                <div class="step-buttons">
+                  <button type="button" id="copy-sql-btn" class="secondary-btn">📋 Copy SQL Schema</button>
+                  <a href="https://supabase.com/dashboard" target="_blank" rel="noopener" class="secondary-btn external-link">Open Supabase Dashboard ↗</a>
+                </div>
+              </div>
+            </div>
+
+            <div class="setup-footer">
+              <button type="button" id="modal-recheck-btn" class="primary-btn">Test Live Connection</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Clean toast notification -->
     <div id="toast" class="toast hidden"></div>

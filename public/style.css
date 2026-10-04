@@ -1154,3 +1154,324 @@ body {
     font-size: 0.74rem;
   }
 }
+
+/* Supabase Status Button in Navbar */
+.supabase-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.35rem 0.65rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.supabase-status-btn:hover {
+  background: var(--bg-input);
+  border-color: var(--border-hover);
+  color: var(--text-main);
+}
+
+.supabase-status-btn .supabase-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #71717a;
+  transition: background 0.2s ease;
+}
+
+.supabase-status-btn.connected {
+  border-color: rgba(16, 185, 129, 0.35);
+  color: #a7f3d0;
+}
+
+.supabase-status-btn.connected .supabase-dot {
+  background: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.supabase-status-btn.not-configured .supabase-dot {
+  background: #f59e0b;
+}
+
+/* Supabase Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(9, 9, 11, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal-backdrop.hidden {
+  display: none !important;
+}
+
+.modal-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  max-width: 580px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.modal-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modal-header-title h2 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.modal-icon {
+  font-size: 1.1rem;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+
+.modal-close-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-surface-elevated);
+}
+
+.modal-body {
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+/* Modal Status Banner */
+.modal-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+.modal-status-banner.connected {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+}
+
+.modal-status-banner.connected .status-indicator {
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+}
+
+.modal-status-banner.checking {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #7dd3fc;
+}
+
+.modal-status-banner.checking .status-indicator {
+  background: #38bdf8;
+}
+
+.modal-status-banner.not-configured,
+.modal-status-banner.error {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: #fcd34d;
+}
+
+.modal-status-banner.not-configured .status-indicator,
+.modal-status-banner.error .status-indicator {
+  background: #f59e0b;
+}
+
+/* Modal Info Box */
+.modal-info-box {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+}
+
+.info-label {
+  color: var(--text-muted);
+}
+
+.info-val {
+  color: var(--text-main);
+}
+
+.info-val.mono {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.info-val.highlight {
+  color: #6ee7b7;
+  font-weight: 700;
+  font-family: var(--font-mono);
+}
+
+.modal-actions-inline {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+/* Setup Guide */
+.setup-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.setup-section-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.setup-step {
+  display: flex;
+  gap: 0.85rem;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+}
+
+.step-num {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-input);
+  border: 1px solid var(--border-active);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+}
+
+.step-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+}
+
+.step-desc {
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.step-hint {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.code-preview-wrap {
+  position: relative;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.65rem 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.code-preview-wrap pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.74rem;
+  color: #e2e8f0;
+  line-height: 1.45;
+  overflow-x: auto;
+}
+
+.copy-snippet-btn {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.copy-snippet-btn:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+  border-color: var(--border-hover);
+}
+
+.step-buttons {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.external-link {
+  text-decoration: none;
+}
+
+.setup-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}

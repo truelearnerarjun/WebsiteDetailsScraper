@@ -13,6 +13,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
+import supabase_client
 
 # Load environment variables from .env if present locally
 load_dotenv()
@@ -683,8 +684,46 @@ def health():
     return jsonify({
         "status": "healthy",
         "google_api_configured": bool(os.getenv("GOOGLE_API_KEY", "") or GOOGLE_API_KEY),
+        "supabase_configured": supabase_client.is_configured(),
         "timestamp": int(time.time()),
     })
+
+
+@app.route("/api/supabase/status", methods=["GET"])
+def supabase_status():
+    status = supabase_client.test_connection()
+    return jsonify(status)
+
+
+@app.route("/api/supabase/save", methods=["POST"])
+def supabase_save():
+    data = request.get_json(silent=True) or {}
+    leads = data.get("leads", [])
+    query = data.get("query", "").strip()
+    result = supabase_client.upsert_leads(leads, query=query)
+    status_code = 200 if result.get("success") else 400
+    return jsonify(result), status_code
+
+
+@app.route("/api/supabase/leads", methods=["GET"])
+def supabase_leads():
+    query = request.args.get("q", "").strip() or request.args.get("query", "").strip()
+    limit = int(request.args.get("limit", 100))
+    min_score = int(request.args.get("min_score", 0))
+    leads = supabase_client.fetch_saved_leads(query=query, limit=limit, min_score=min_score)
+    return jsonify({
+        "count": len(leads),
+        "leads": leads,
+    })
+
+
+@app.route("/api/supabase/schema", methods=["GET"])
+def supabase_schema():
+    schema_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "supabase_schema.sql"))
+    if os.path.exists(schema_path):
+        with open(schema_path, "r", encoding="utf-8") as f:
+            return f.read(), 200, {"Content-Type": "text/plain; charset=utf-8"}
+    return "-- Schema file not found", 404
 
 
 @app.route("/api/scrape", methods=["GET", "POST"])
@@ -694,12 +733,14 @@ def scrape_endpoint():
     mode = "places"
     min_rating = 0.0
     max_rating = 0.0
+    auto_save_supabase = False
 
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         query = data.get("query", "").strip()
         count = int(data.get("count", 15))
         mode = data.get("mode", "places").strip().lower()
+        auto_save_supabase = bool(data.get("auto_save_supabase"))
         try:
             min_rating = float(data.get("min_rating", 0.0) or 0.0)
         except (ValueError, TypeError):
@@ -712,6 +753,7 @@ def scrape_endpoint():
         query = request.args.get("q", "").strip() or request.args.get("query", "").strip()
         count = int(request.args.get("n", 15) or request.args.get("count", 15))
         mode = request.args.get("mode", "places").strip().lower()
+        auto_save_supabase = request.args.get("auto_save_supabase", "").lower() in ("true", "1", "yes")
         try:
             min_rating = float(request.args.get("min_rating", 0.0) or 0.0)
         except (ValueError, TypeError):
@@ -729,11 +771,23 @@ def scrape_endpoint():
         return jsonify({"error": "Missing 'query' or 'q' parameter"}), 400
 
     leads, meta = discover_places(query, max_results=count, mode=mode, min_rating=min_rating, max_rating=max_rating)
+
+    # Supabase auto-sync if configured or requested
+    cfg = supabase_client.get_supabase_config()
+    if (auto_save_supabase or cfg["auto_sync"]) and supabase_client.is_configured() and leads:
+        try:
+            sync_res = supabase_client.upsert_leads(leads, query=query)
+            meta["supabase_synced"] = sync_res.get("success", False)
+            meta["supabase_saved_count"] = sync_res.get("count", 0)
+        except Exception as sync_err:
+            print(f"[Supabase] Auto-sync error: {sync_err}", flush=True)
+
     return jsonify({
         "query": query,
         "count": len(leads),
         "source": meta.get("source"),
         "api_status": meta.get("api_status"),
+        "supabase_synced": meta.get("supabase_synced", False),
         "leads": leads,
     })
 
