@@ -138,17 +138,37 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 2800);
   }
 
-  // Rating filter mutually exclusive toggles
-  const filterTopRated = document.getElementById("filter-top-rated");
-  const filterUnder4 = document.getElementById("filter-under-4");
-  if (filterTopRated && filterUnder4) {
-    filterTopRated.addEventListener("change", () => {
-      if (filterTopRated.checked) filterUnder4.checked = false;
+  // Rating filter segmented control (Any / Under < / Over ≥ / Custom threshold)
+  let selectedRatingMode = "any";
+  const ratingCustomInput = document.getElementById("rating-custom-input");
+
+  document.querySelectorAll("#rating-filter-group .pill-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("#rating-filter-group .pill-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      selectedRatingMode = btn.dataset.ratingMode;
+
+      if (ratingCustomInput) {
+        if (selectedRatingMode === "under") {
+          ratingCustomInput.style.display = "inline-block";
+          if (!ratingCustomInput.value || parseFloat(ratingCustomInput.value) > 4.5) {
+            ratingCustomInput.value = "4.0";
+          }
+          ratingCustomInput.placeholder = "4.0";
+          ratingCustomInput.focus();
+        } else if (selectedRatingMode === "over") {
+          ratingCustomInput.style.display = "inline-block";
+          if (!ratingCustomInput.value || parseFloat(ratingCustomInput.value) < 4.0) {
+            ratingCustomInput.value = "4.5";
+          }
+          ratingCustomInput.placeholder = "4.5";
+          ratingCustomInput.focus();
+        } else {
+          ratingCustomInput.style.display = "none";
+        }
+      }
     });
-    filterUnder4.addEventListener("change", () => {
-      if (filterUnder4.checked) filterTopRated.checked = false;
-    });
-  }
+  });
 
   // Handle Form Submission
   searchForm.addEventListener("submit", async (e) => {
@@ -161,8 +181,15 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    const minRating = filterTopRated && filterTopRated.checked ? 4.5 : 0.0;
-    const maxRating = filterUnder4 && filterUnder4.checked ? 4.0 : 0.0;
+    let minRating = 0.0;
+    let maxRating = 0.0;
+    const rVal = parseFloat(ratingCustomInput?.value || "0.0") || 0.0;
+
+    if (selectedRatingMode === "under") {
+      maxRating = rVal > 0 ? rVal : 4.0;
+    } else if (selectedRatingMode === "over") {
+      minRating = rVal > 0 ? rVal : 4.5;
+    }
 
     // Update UI for loading state
     submitBtn.disabled = true;
@@ -170,7 +197,10 @@ document.addEventListener("DOMContentLoaded", () => {
     btnText.textContent = "Scanning...";
 
     statusBar.classList.remove("hidden");
-    const filterMsg = maxRating ? " (Rating < 4.0)" : (minRating ? " (Top Rated)" : "");
+    let filterMsg = "";
+    if (selectedRatingMode === "under") filterMsg = ` (Rating < ${maxRating})`;
+    else if (selectedRatingMode === "over") filterMsg = ` (Rating ≥ ${minRating})`;
+
     statusMessage.textContent = `Searching ${selectedMode === 'places' ? 'Google Places' : 'live web'} for "${query}"${filterMsg}...`;
     statusCount.textContent = `Targeting ${selectedCount}`;
 

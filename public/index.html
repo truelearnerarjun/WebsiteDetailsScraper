@@ -104,18 +104,31 @@
               </div>
             </div>
 
-            <!-- Filters -->
+            <!-- Rating Filter Control -->
+            <div class="option-item">
+              <span class="option-label">Rating</span>
+              <div class="pill-group" id="rating-filter-group">
+                <button type="button" class="pill-btn active" data-rating-mode="any">Any</button>
+                <button type="button" class="pill-btn" data-rating-mode="under">Under (&lt;)</button>
+                <button type="button" class="pill-btn" data-rating-mode="over">Over (≥)</button>
+                <input 
+                  type="number" 
+                  id="rating-custom-input" 
+                  class="custom-limit-input" 
+                  placeholder="4.0" 
+                  step="0.1" 
+                  min="1.0" 
+                  max="5.0" 
+                  title="Target star threshold (e.g. 4.0, 3.5, 4.5)"
+                  style="display: none; width: 55px;"
+                />
+              </div>
+            </div>
+
+            <!-- Additional Filters -->
             <div class="option-item filter-toggles">
               <span class="option-label">Filters</span>
               <div class="checkbox-group">
-                <label class="clean-checkbox">
-                  <input type="checkbox" id="filter-top-rated">
-                  <span>Top rated</span>
-                </label>
-                <label class="clean-checkbox" title="Filter places with rating under 4.0 (great for reputation management & review outreach)">
-                  <input type="checkbox" id="filter-under-4">
-                  <span>Rating &lt; 4.0</span>
-                </label>
                 <label class="clean-checkbox">
                   <input type="checkbox" id="filter-open-now">
                   <span>Open now</span>

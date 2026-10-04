@@ -1107,15 +1107,25 @@ def main():
         arg = args[idx]
         if arg in ("--top-rated", "-tr"):
             top_rated = True
+            min_rating = 4.5
         elif arg == "--no-top-rated":
             top_rated = False
+            min_rating = 0.0
         elif arg in ("--under-4", "-u4"):
             top_rated = False
             max_rating = 4.0
-        elif arg in ("--max-rating", "-mr") and idx + 1 < len(args):
+        elif arg in ("--max-rating", "-mr", "--under", "--less-than", "-lt") and idx + 1 < len(args):
             idx += 1
             try:
                 max_rating = float(args[idx])
+                top_rated = False
+            except ValueError:
+                pass
+        elif arg in ("--min-rating", "-min", "--over", "--more-than", "-gt") and idx + 1 < len(args):
+            idx += 1
+            try:
+                min_rating = float(args[idx])
+                top_rated = False
             except ValueError:
                 pass
         elif arg in ("--open-now", "-on"):
