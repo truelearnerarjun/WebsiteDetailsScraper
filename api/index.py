@@ -1,5 +1,4 @@
 import csv
-import io
 import json
 import os
 import re
@@ -7,11 +6,15 @@ import time
 import urllib.parse
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs, unquote, urldefrag, urljoin, urlparse
+
+from flask import Flask, jsonify, request, send_from_directory
 import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
+
+# Initialize Flask app (native Vercel Python entrypoint)
+app = Flask(__name__, static_folder="../public")
 
 # Environment configuration
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
@@ -25,7 +28,7 @@ USER_AGENT = (
 
 HEADERS = {
     "User-Agent": USER_AGENT,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate",
     "Connection": "keep-alive",
@@ -33,7 +36,6 @@ HEADERS = {
 
 EMAIL_REGEX = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 PHONE_CLEAN_REGEX = re.compile(r"(?:\+?91[\s.-]?)?0?\d{2,5}[\s.-]?\d{5,8}\b")
-PHONE_REGEX = re.compile(r"""(?:(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{2,4}\)?[\s.-]?)?\d{3}[\s.-]?\d{4})""", re.VERBOSE)
 
 INVALID_EMAIL_EXTENSIONS = (
     ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
@@ -48,20 +50,6 @@ TITLE_KEYWORD_REGEX = re.compile(
     r"\b(dr\.?|doctor|dds|dmd|dentist|surgeon|specialist|orthodontist|founder|co-founder|owner|ceo|director|president|principal|partner)\b",
     re.IGNORECASE,
 )
-
-PAGE_KEYWORDS = {
-    "contact": ["contact", "contact-us", "contactus", "get-in-touch"],
-    "about": ["about", "about-us", "our-story"],
-    "team": ["team", "our-team", "doctors", "dentists", "surgeons", "specialists", "meet-the-team", "staff"],
-}
-
-FIELDS = [
-    "search_rank", "business_name", "category", "review_rating",
-    "review_count", "phone", "address", "hours_status", "website",
-    "email", "keyword", "review_snippet", "contact_page", "about_page",
-    "team_page", "owner_name_candidates", "google_maps_directions",
-    "pages_checked", "status"
-]
 
 
 def clean_netloc(netloc: str) -> str:
@@ -141,7 +129,7 @@ def crawl_site(target_info: dict) -> dict:
         visited.add(curr)
 
         try:
-            resp = session.get(curr, timeout=6)
+            resp = session.get(curr, timeout=5)
             if resp.status_code != 200 or "text/html" not in resp.headers.get("content-type", ""):
                 continue
             pages_checked += 1
@@ -174,7 +162,6 @@ def discover_places(query: str, max_results: int = 30) -> list:
     discovered = []
     seen = set()
 
-    # 1. Search using DDGS for local business knowledge & links
     variations = [query, f"{query} contact clinic", f"{query} address phone"]
     for q in variations:
         if len(discovered) >= max_results:
@@ -190,7 +177,6 @@ def discover_places(query: str, max_results: int = 30) -> list:
                     continue
                 seen.add(domain)
 
-                # Extract rating & phone from body if present
                 m_phone = PHONE_CLEAN_REGEX.search(body)
                 phone = m_phone.group(0) if m_phone else ""
 
@@ -225,7 +211,6 @@ def discover_places(query: str, max_results: int = 30) -> list:
         except Exception:
             continue
 
-    # Crawl discovered places in parallel
     enriched = []
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = {executor.submit(crawl_site, d): d for d in discovered}
@@ -243,83 +228,60 @@ def discover_places(query: str, max_results: int = 30) -> list:
     return enriched
 
 
-class handler(BaseHTTPRequestHandler):
-    def _send_json(self, data, status=200):
-        body = json.dumps(data).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+# Global CORS handler for all responses
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
-    def do_OPTIONS(self):
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
 
-    def do_GET(self):
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/")
+@app.route("/api/health", methods=["GET"])
+@app.route("/api", methods=["GET"])
+def health():
+    return jsonify({
+        "status": "healthy",
+        "google_api_configured": bool(GOOGLE_API_KEY),
+        "timestamp": int(time.time()),
+    })
 
-        if path in ("/api/health", "/api"):
-            self._send_json({
-                "status": "healthy",
-                "google_api_configured": bool(GOOGLE_API_KEY),
-                "timestamp": int(time.time()),
-            })
-            return
 
-        if path == "/api/scrape":
-            params = parse_qs(parsed.query)
-            query = params.get("q", [""])[0].strip()
-            count = int(params.get("n", ["10"])[0])
-            count = max(1, min(count, 30))
+@app.route("/api/scrape", methods=["GET", "POST"])
+def scrape_endpoint():
+    query = ""
+    count = 15
 
-            if not query:
-                self._send_json({"error": "Missing 'q' query parameter"}, status=400)
-                return
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        query = data.get("query", "").strip()
+        count = int(data.get("count", 15))
+    else:
+        query = request.args.get("q", "").strip() or request.args.get("query", "").strip()
+        count = int(request.args.get("n", 15) or request.args.get("count", 15))
 
-            results = discover_places(query, max_results=count)
-            self._send_json({
-                "query": query,
-                "count": len(results),
-                "leads": results,
-            })
-            return
+    count = max(1, min(count, 30))
 
-        self._send_json({"error": "Not Found"}, status=404)
+    if not query:
+        return jsonify({"error": "Missing 'query' or 'q' parameter"}), 400
 
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        path = parsed.path.rstrip("/")
+    leads = discover_places(query, max_results=count)
+    return jsonify({
+        "query": query,
+        "count": len(leads),
+        "leads": leads,
+    })
 
-        content_length = int(self.headers.get("Content-Length", 0))
-        post_data = self.rfile.read(content_length).decode("utf-8") if content_length > 0 else "{}"
-        try:
-            body = json.loads(post_data)
-        except Exception:
-            body = {}
 
-        if path == "/api/scrape":
-            query = body.get("query", "").strip()
-            count = int(body.get("count", 15))
-            count = max(1, min(count, 30))
+# Fallback for root / and static assets when running server.py locally
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_static(path):
+    public_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public"))
+    if path != "" and os.path.exists(os.path.join(public_dir, path)):
+        return send_from_directory(public_dir, path)
+    return send_from_directory(public_dir, "index.html")
 
-            if not query:
-                self._send_json({"error": "Missing 'query' field in request body"}, status=400)
-                return
 
-            leads = discover_places(query, max_results=count)
-            self._send_json({
-                "query": query,
-                "count": len(leads),
-                "leads": leads,
-            })
-            return
-
-        self._send_json({"error": "Not Found"}, status=404)
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=3000, debug=True)

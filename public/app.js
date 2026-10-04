@@ -37,6 +37,20 @@ document.addEventListener("DOMContentLoaded", () => {
   let selectedMode = "places";
   let selectedCount = 30;
 
+  // Detect if opened via file:// protocol directly
+  if (window.location.protocol === "file:") {
+    const banner = document.createElement("div");
+    banner.style.cssText = "background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.4); padding: 0.85rem 1rem; border-radius: 8px; font-size: 0.82rem; margin-bottom: 1.5rem; line-height: 1.5;";
+    banner.innerHTML = `
+      <strong>⚠️ Local Setup Notice:</strong> You opened this file directly from your disk (<code>file://</code>). 
+      Browsers block all API requests on file:// URLs for security (CORS).<br>
+      <strong>To run locally:</strong> Open your terminal, run <code>python server.py</code>, and open 
+      <a href="http://localhost:3000" style="color: #38bdf8; text-decoration: underline; font-weight: 600;">http://localhost:3000</a>!
+    `;
+    const main = document.querySelector(".main-content");
+    if (main) main.prepend(banner);
+  }
+
   // Clear query button
   clearBtn.addEventListener("click", () => {
     queryInput.value = "";
@@ -112,9 +126,12 @@ document.addEventListener("DOMContentLoaded", () => {
   searchForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const query = queryInput.value.trim();
-    if (!query) return;
-
     currentQuery = query;
+
+    if (window.location.protocol === "file:") {
+      showToast("Blocked by browser on file://. Run 'python server.py' & open http://localhost:3000");
+      return;
+    }
 
     // Update UI for loading state
     submitBtn.disabled = true;
