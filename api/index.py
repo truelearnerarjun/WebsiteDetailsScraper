@@ -2,11 +2,17 @@ import csv
 import json
 import os
 import re
+import sys
 import time
 import urllib.parse
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import parse_qs, unquote, urldefrag, urljoin, urlparse
+
+# Ensure root directory is in sys.path so modules like supabase_client resolve on Vercel
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
