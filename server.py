@@ -1,20 +1,22 @@
 """
 Local development server for WebsiteDetailsScraper.
-Serves static frontend from public/ and executes Python API endpoints from api/.
-Run with: python server.py
-Then open: http://localhost:3000 in your browser.
+Serves the frontend (public/) AND the API (/api/scrape) from one Flask app.
+
+Run:   python server.py
+Open:  http://localhost:5050
+
+NOTE: Do not use `python -m http.server` — it only serves static files
+and cannot handle POST /api/scrape.
 """
 import os
-import sys
 
 from api.index import app
 
-PORT = int(os.getenv("PORT", 3000))
+PORT = int(os.getenv("PORT", 5050))
 
 if __name__ == "__main__":
-    print(f"\n=======================================================")
-    print(f"  Places Scraper Local Server Running!")
+    print("\n=======================================================")
+    print("  Places Scraper local server running")
     print(f"  Open in your browser: http://localhost:{PORT}")
-    print(f"  (Do NOT double-click index.html directly via file://)")
-    print(f"=======================================================\n")
-    app.run(host="0.0.0.0", port=PORT, debug=False)
+    print("=======================================================\n")
+    app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)

@@ -45,7 +45,7 @@ document.addEventListener("DOMContentLoaded", () => {
       <strong>⚠️ Local Setup Notice:</strong> You opened this file directly from your disk (<code>file://</code>). 
       Browsers block all API requests on file:// URLs for security (CORS).<br>
       <strong>To run locally:</strong> Open your terminal, run <code>python server.py</code>, and open 
-      <a href="http://localhost:3000" style="color: #38bdf8; text-decoration: underline; font-weight: 600;">http://localhost:3000</a>!
+      <a href="http://localhost:5050" style="color: #38bdf8; text-decoration: underline; font-weight: 600;">http://localhost:5050</a>!
     `;
     const main = document.querySelector(".main-content");
     if (main) main.prepend(banner);
@@ -129,7 +129,7 @@ document.addEventListener("DOMContentLoaded", () => {
     currentQuery = query;
 
     if (window.location.protocol === "file:") {
-      showToast("Blocked by browser on file://. Run 'python server.py' & open http://localhost:3000");
+      showToast("Blocked by browser on file://. Run 'python server.py' & open http://localhost:5050");
       return;
     }
 
@@ -145,29 +145,30 @@ document.addEventListener("DOMContentLoaded", () => {
     emptyState.classList.add("hidden");
 
     try {
-      let response = await fetch("/api/scrape", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: query,
-          count: selectedCount,
-          mode: selectedMode,
-        }),
-      });
-
-      // Fallback in case of routing variations
-      if (response.status === 404) {
-        response = await fetch(`/api/scrape?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}`);
-      }
-      if (response.status === 404) {
-        response = await fetch(`/api?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}`);
+      const getUrl = `/api/scrape?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}`;
+      let response;
+      try {
+        response = await fetch("/api/scrape", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, count: selectedCount, mode: selectedMode }),
+        });
+      } catch (_) {
+        // POST aborted (e.g. static server rejecting POST) — retry with GET
+        response = await fetch(getUrl);
       }
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error("API not found (404). If testing locally, run: python server.py");
+      // Static hosts reply 404/405/501 to POST; retry with GET
+      if ([404, 405, 501].includes(response.status)) {
+        response = await fetch(getUrl);
+      }
+
+      const isJson = (response.headers.get("content-type") || "").includes("application/json");
+      if (!response.ok || !isJson) {
+        if ([404, 405, 501].includes(response.status) || !isJson) {
+          throw new Error("Backend API not running here. Locally, run `python server.py` and open http://localhost:5050");
         }
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(`HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -177,7 +178,10 @@ document.addEventListener("DOMContentLoaded", () => {
       showToast(`Extracted ${currentLeads.length} listings in rank order`);
     } catch (err) {
       console.error(err);
-      showToast(`Error: ${err.message}`);
+      const msg = err instanceof TypeError
+        ? "Can't reach the backend. Run `python server.py` and open http://localhost:5050"
+        : err.message;
+      showToast(`Error: ${msg}`);
       if (currentLeads.length === 0) {
         emptyState.classList.remove("hidden");
       }
