@@ -269,12 +269,21 @@ def search_web_fallback(query: str, max_results: int = 30) -> list:
     discovered = []
     seen = set()
 
-    variations = [query, f"{query} contact clinic", f"{query} address phone"]
+    variations = [
+        query,
+        f"{query} contact clinic",
+        f"{query} address phone",
+        f"best {query}",
+        f"top {query} directory",
+        f"{query} clinic locations",
+        f"{query} appointments",
+        f"{query} reviews list",
+    ]
     for q in variations:
         if len(discovered) >= max_results:
             break
         try:
-            results = DDGS().text(q, max_results=15)
+            results = DDGS().text(q, max_results=30)
             for item in (results or []):
                 href = item.get("href", "")
                 title = item.get("title", "")
@@ -461,7 +470,7 @@ def scrape_endpoint():
         count = int(request.args.get("n", 15) or request.args.get("count", 15))
         mode = request.args.get("mode", "places").strip().lower()
 
-    count = max(1, min(count, 30))
+    count = max(1, min(count, 200))
     if mode not in ("places", "web"):
         mode = "places"
 

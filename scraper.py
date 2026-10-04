@@ -579,7 +579,8 @@ def search_google_places(
             page = context.new_page()
 
             start = 0
-            while len(discovered) < max_results and start < 80:
+            max_start = max(100, ((max_results // 20) + 3) * 20)
+            while len(discovered) < max_results and start < max_start:
                 url = f"https://www.google.com/search?q={full_query.replace(' ', '+')}&udm=local&start={start}"
                 page.goto(url, wait_until="domcontentloaded", timeout=25000)
                 time.sleep(3)

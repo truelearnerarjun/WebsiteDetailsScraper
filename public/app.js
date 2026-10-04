@@ -81,14 +81,30 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Limit pill buttons
+  // Limit pill buttons & custom limit input
+  const customCountInput = document.getElementById("custom-count-input");
   document.querySelectorAll("#count-group .pill-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       document.querySelectorAll("#count-group .pill-btn").forEach((b) => b.classList.remove("active"));
+      if (customCountInput) {
+        customCountInput.value = "";
+        customCountInput.classList.remove("active");
+      }
       btn.classList.add("active");
       selectedCount = parseInt(btn.dataset.count, 10);
     });
   });
+
+  if (customCountInput) {
+    customCountInput.addEventListener("input", () => {
+      const val = parseInt(customCountInput.value, 10);
+      if (val && val > 0) {
+        document.querySelectorAll("#count-group .pill-btn").forEach((b) => b.classList.remove("active"));
+        customCountInput.classList.add("active");
+        selectedCount = val;
+      }
+    });
+  }
 
   // View switcher (Table / Cards)
   viewTableBtn.addEventListener("click", () => {
