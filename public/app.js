@@ -138,6 +138,18 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 2800);
   }
 
+  // Rating filter mutually exclusive toggles
+  const filterTopRated = document.getElementById("filter-top-rated");
+  const filterUnder4 = document.getElementById("filter-under-4");
+  if (filterTopRated && filterUnder4) {
+    filterTopRated.addEventListener("change", () => {
+      if (filterTopRated.checked) filterUnder4.checked = false;
+    });
+    filterUnder4.addEventListener("change", () => {
+      if (filterUnder4.checked) filterTopRated.checked = false;
+    });
+  }
+
   // Handle Form Submission
   searchForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -149,25 +161,29 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
+    const minRating = filterTopRated && filterTopRated.checked ? 4.5 : 0.0;
+    const maxRating = filterUnder4 && filterUnder4.checked ? 4.0 : 0.0;
+
     // Update UI for loading state
     submitBtn.disabled = true;
     btnSpinner.style.display = "inline-block";
     btnText.textContent = "Scanning...";
 
     statusBar.classList.remove("hidden");
-    statusMessage.textContent = `Searching ${selectedMode === 'places' ? 'Google Places' : 'live web'} for "${query}"...`;
+    const filterMsg = maxRating ? " (Rating < 4.0)" : (minRating ? " (Top Rated)" : "");
+    statusMessage.textContent = `Searching ${selectedMode === 'places' ? 'Google Places' : 'live web'} for "${query}"${filterMsg}...`;
     statusCount.textContent = `Targeting ${selectedCount}`;
 
     emptyState.classList.add("hidden");
 
     try {
-      const getUrl = `/api/scrape?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}`;
+      const getUrl = `/api/scrape?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}&min_rating=${minRating}&max_rating=${maxRating}`;
       let response;
       try {
         response = await fetch("/api/scrape", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query, count: selectedCount, mode: selectedMode }),
+          body: JSON.stringify({ query, count: selectedCount, mode: selectedMode, min_rating: minRating, max_rating: maxRating }),
         });
       } catch (_) {
         // POST aborted (e.g. static server rejecting POST) — retry with GET

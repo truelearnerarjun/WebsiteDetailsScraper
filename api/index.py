@@ -353,7 +353,7 @@ def find_business_website(name: str, query: str) -> str:
     return ""
 
 
-def run_local_scraper(query: str, max_results: int, mode: str = "places") -> list:
+def run_local_scraper(query: str, max_results: int, mode: str = "places", min_rating: float = 0.0, max_rating: float = 0.0) -> list:
     """Connect UI directly to scraper.py when running locally."""
     try:
         import sys
@@ -364,8 +364,13 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places") -> lis
             print(f"[Local UI] Calling scraper.py (Web Search Engine) for: '{query}' ({max_results} entries)...")
             targets = scraper.search_keyword_leads(query, max_results=max_results)
         else:
-            print(f"[Local UI] Calling scraper.py (Playwright Places Engine) for: '{query}' ({max_results} places)...")
-            targets = scraper.search_google_places(query, max_results=max_results)
+            print(f"[Local UI] Calling scraper.py (Playwright Places Engine) for: '{query}' ({max_results} places, max_rating={max_rating})...")
+            targets = scraper.search_google_places(
+                query,
+                max_results=max_results,
+                min_rating=min_rating,
+                max_rating=max_rating,
+            )
             # Auto-enrich any places missing a website URL
             for t in targets:
                 if not t.get("website"):
@@ -376,6 +381,24 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places") -> lis
         if not targets:
             print(f"[Local UI] scraper.py returned 0 results for mode='{mode}', falling back...")
             return []
+
+        # Rating filtering if requested
+        if min_rating > 0.0 or max_rating > 0.0:
+            filtered_targets = []
+            for t in targets:
+                r_val = None
+                try:
+                    if t.get("review_rating"):
+                        r_val = float(t["review_rating"])
+                except Exception:
+                    pass
+                if r_val is not None:
+                    if min_rating > 0.0 and r_val < min_rating:
+                        continue
+                    if max_rating > 0.0 and r_val >= max_rating:
+                        continue
+                filtered_targets.append(t)
+            targets = filtered_targets
 
         enriched = []
         with ThreadPoolExecutor(max_workers=4) as executor:
@@ -393,10 +416,10 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places") -> lis
         return []
 
 
-def discover_places(query: str, max_results: int = 30, mode: str = "places") -> tuple:
+def discover_places(query: str, max_results: int = 30, mode: str = "places", min_rating: float = 0.0, max_rating: float = 0.0) -> tuple:
     # 1. Local mode: connect UI directly to scraper.py
     if is_local_env():
-        local_leads = run_local_scraper(query, max_results=max_results, mode=mode)
+        local_leads = run_local_scraper(query, max_results=max_results, mode=mode, min_rating=min_rating, max_rating=max_rating)
         if local_leads:
             return local_leads, {
                 "source": f"scraper_py_{mode}",
@@ -411,6 +434,24 @@ def discover_places(query: str, max_results: int = 30, mode: str = "places") -> 
         places, api_status = search_google_places_api(query, max_results=max_results)
         if not places:
             places = search_web_fallback(query, max_results=max_results)
+
+    # Filter by rating if requested
+    if min_rating > 0.0 or max_rating > 0.0:
+        filtered_places = []
+        for p in places:
+            r_val = None
+            try:
+                if p.get("review_rating"):
+                    r_val = float(p["review_rating"])
+            except Exception:
+                pass
+            if r_val is not None:
+                if min_rating > 0.0 and r_val < min_rating:
+                    continue
+                if max_rating > 0.0 and r_val >= max_rating:
+                    continue
+            filtered_places.append(p)
+        places = filtered_places
 
     meta = {
         "source": "google_places_official" if (mode == "places" and "OK" in api_status) else "web_fallback",
@@ -459,16 +500,34 @@ def scrape_endpoint():
     query = ""
     count = 15
     mode = "places"
+    min_rating = 0.0
+    max_rating = 0.0
 
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         query = data.get("query", "").strip()
         count = int(data.get("count", 15))
         mode = data.get("mode", "places").strip().lower()
+        try:
+            min_rating = float(data.get("min_rating", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            pass
+        try:
+            max_rating = float(data.get("max_rating", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            pass
     else:
         query = request.args.get("q", "").strip() or request.args.get("query", "").strip()
         count = int(request.args.get("n", 15) or request.args.get("count", 15))
         mode = request.args.get("mode", "places").strip().lower()
+        try:
+            min_rating = float(request.args.get("min_rating", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            pass
+        try:
+            max_rating = float(request.args.get("max_rating", 0.0) or 0.0)
+        except (ValueError, TypeError):
+            pass
 
     count = max(1, min(count, 200))
     if mode not in ("places", "web"):
@@ -477,7 +536,7 @@ def scrape_endpoint():
     if not query:
         return jsonify({"error": "Missing 'query' or 'q' parameter"}), 400
 
-    leads, meta = discover_places(query, max_results=count, mode=mode)
+    leads, meta = discover_places(query, max_results=count, mode=mode, min_rating=min_rating, max_rating=max_rating)
     return jsonify({
         "query": query,
         "count": len(leads),

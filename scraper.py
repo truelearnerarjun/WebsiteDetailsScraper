@@ -524,6 +524,7 @@ def search_google_places(
     open_now: bool = FILTER_OPEN_NOW,
     distance: str = FILTER_DISTANCE,
     min_rating: float = MIN_RATING_THRESHOLD,
+    max_rating: float = 0.0,
 ) -> list:
     """
     Search Google Places (udm=local) for real local business listings.
@@ -649,6 +650,13 @@ def search_google_places(
                         except ValueError:
                             pass
 
+                    if max_rating > 0.0 and rating:
+                        try:
+                            if float(rating) >= max_rating:
+                                continue
+                        except ValueError:
+                            pass
+
                     seen_names.add(name)
                     lines = item.get("lines", [])
 
@@ -724,6 +732,10 @@ def search_google_places(
         if not discovered:
             print("[*] Falling back to web search discovery...")
             return search_keyword_leads(keyword, max_results=max_results)
+
+    if not discovered:
+        print("[*] No Google Places entries found (or bot check triggered). Falling back to web search discovery...")
+        return search_keyword_leads(keyword, max_results=max_results)
 
     print(f"[+] Discovered {len(discovered)} Google Places entries for '{keyword}'.\n")
     return discovered
@@ -1084,6 +1096,7 @@ def main():
     open_now = FILTER_OPEN_NOW
     distance = FILTER_DISTANCE
     max_results = SEARCH_RANK_DEPTH
+    max_rating = 0.0
 
     # Parse arguments
     args = sys.argv[1:]
@@ -1096,6 +1109,15 @@ def main():
             top_rated = True
         elif arg == "--no-top-rated":
             top_rated = False
+        elif arg in ("--under-4", "-u4"):
+            top_rated = False
+            max_rating = 4.0
+        elif arg in ("--max-rating", "-mr") and idx + 1 < len(args):
+            idx += 1
+            try:
+                max_rating = float(args[idx])
+            except ValueError:
+                pass
         elif arg in ("--open-now", "-on"):
             open_now = True
         elif arg in ("--distance", "-dist") and idx + 1 < len(args):
@@ -1143,6 +1165,7 @@ def main():
                 top_rated=top_rated,
                 open_now=open_now,
                 distance=distance,
+                max_rating=max_rating,
             )
         else:
             targets = search_keyword_leads(search_query, max_results=max_results)
