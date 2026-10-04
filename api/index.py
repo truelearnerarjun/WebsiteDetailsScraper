@@ -360,14 +360,16 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places", min_ra
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
         import scraper
 
+        fetch_count = max(max_results * 3, 30) if (min_rating > 0.0 or max_rating > 0.0) else max_results
+
         if mode == "web":
-            print(f"[Local UI] Calling scraper.py (Web Search Engine) for: '{query}' ({max_results} entries)...")
-            targets = scraper.search_keyword_leads(query, max_results=max_results)
+            print(f"[Local UI] Calling scraper.py (Web Search Engine) for: '{query}' ({fetch_count} entries)...")
+            targets = scraper.search_keyword_leads(query, max_results=fetch_count)
         else:
-            print(f"[Local UI] Calling scraper.py (Playwright Places Engine) for: '{query}' ({max_results} places, max_rating={max_rating})...")
+            print(f"[Local UI] Calling scraper.py (Playwright Places Engine) for: '{query}' ({fetch_count} places, max_rating={max_rating})...")
             targets = scraper.search_google_places(
                 query,
-                max_results=max_results,
+                max_results=fetch_count,
                 min_rating=min_rating,
                 max_rating=max_rating,
             )
@@ -382,24 +384,6 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places", min_ra
             print(f"[Local UI] scraper.py returned 0 results for mode='{mode}', falling back...")
             return []
 
-        # Rating filtering if requested
-        if min_rating > 0.0 or max_rating > 0.0:
-            filtered_targets = []
-            for t in targets:
-                r_val = None
-                try:
-                    if t.get("review_rating"):
-                        r_val = float(t["review_rating"])
-                except Exception:
-                    pass
-                if r_val is not None:
-                    if min_rating > 0.0 and r_val < min_rating:
-                        continue
-                    if max_rating > 0.0 and r_val >= max_rating:
-                        continue
-                filtered_targets.append(t)
-            targets = filtered_targets
-
         enriched = []
         with ThreadPoolExecutor(max_workers=4) as executor:
             futures = {executor.submit(scraper.scrape_site, t): t for t in targets}
@@ -409,8 +393,27 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places", min_ra
                 except Exception:
                     enriched.append(futures[f])
 
+        # Filter enriched items by rating after crawl
+        if min_rating > 0.0 or max_rating > 0.0:
+            filtered_enriched = []
+            for item in enriched:
+                r_val = None
+                try:
+                    r_str = item.get("review_rating") or ""
+                    if r_str:
+                        r_val = float(r_str)
+                except Exception:
+                    pass
+                if r_val is not None:
+                    if min_rating > 0.0 and r_val < min_rating:
+                        continue
+                    if max_rating > 0.0 and r_val >= max_rating:
+                        continue
+                    filtered_enriched.append(item)
+            enriched = filtered_enriched
+
         enriched.sort(key=lambda r: scraper.parse_rank_num(r.get("search_rank", "")))
-        return enriched
+        return enriched[:max_results]
     except Exception as e:
         print(f"[Local UI] Error in local scraper.py: {e}")
         return []
