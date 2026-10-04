@@ -56,6 +56,164 @@ TITLE_KEYWORD_REGEX = re.compile(
 )
 
 
+def parse_rank(item: dict) -> int:
+    """Return a stable numeric rank for sorting and duplicate resolution."""
+    match = re.search(r"\d+", str(item.get("search_rank", "")))
+    return int(match.group(0)) if match else 999999
+
+
+def normalize_phone_key(phone: str) -> str:
+    """Create a comparison key without changing the number shown to the user."""
+    digits = re.sub(r"\D", "", phone or "")
+    if len(digits) == 12 and digits.startswith("91"):
+        digits = digits[2:]
+    if len(digits) == 11 and digits.startswith("0") and digits[1] in "6789":
+        digits = digits[1:]
+    return digits if 7 <= len(digits) <= 15 else ""
+
+
+def normalize_domain_key(url: str) -> str:
+    domain = clean_netloc(urlparse(url or "").netloc)
+    return domain if domain and "google." not in domain else ""
+
+
+def unique_values(*values: str) -> str:
+    """Combine semicolon-separated contact values while retaining display text."""
+    seen = set()
+    items = []
+    for value in values:
+        for item in str(value or "").split(";"):
+            item = item.strip()
+            key = item.lower()
+            if item and key not in seen:
+                seen.add(key)
+                items.append(item)
+    return "; ".join(items)
+
+
+def unique_phone_values(*values: str) -> str:
+    """Keep one display value per normalized phone number when merging duplicates."""
+    seen = set()
+    items = []
+    for value in values:
+        for item in str(value or "").split(";"):
+            item = item.strip()
+            key = normalize_phone_key(item) or item.lower()
+            if item and key not in seen:
+                seen.add(key)
+                items.append(item)
+    return "; ".join(items)
+
+
+def lead_identity_keys(lead: dict) -> set:
+    """Use independent, conservative identifiers to avoid merging different businesses."""
+    keys = set()
+    domain = normalize_domain_key(lead.get("website", ""))
+    if domain:
+        keys.add(f"domain:{domain}")
+    for number in str(lead.get("phone", "")).split(";"):
+        phone_key = normalize_phone_key(number)
+        if phone_key:
+            keys.add(f"phone:{phone_key}")
+
+    name = re.sub(r"[^a-z0-9]", "", str(lead.get("business_name", "")).lower())
+    address = re.sub(r"[^a-z0-9]", "", str(lead.get("address", "")).lower())
+    if len(name) >= 6 and len(address) >= 12:
+        keys.add(f"name-address:{name[:36]}:{address[:36]}")
+    return keys
+
+
+def merge_duplicate_leads(leads: list) -> list:
+    """Merge only leads sharing a domain, phone, or matching name/address fingerprint."""
+    merged = []
+    key_to_index = {}
+
+    for lead in sorted(leads, key=parse_rank):
+        item = dict(lead)
+        keys = lead_identity_keys(item)
+        matching_indexes = {key_to_index[key] for key in keys if key in key_to_index}
+        if not matching_indexes:
+            item["duplicate_count"] = int(item.get("duplicate_count") or 1)
+            item["merged_ranks"] = str(item.get("search_rank", ""))
+            index = len(merged)
+            merged.append(item)
+            for key in keys:
+                key_to_index[key] = index
+            continue
+
+        index = min(matching_indexes)
+        primary = merged[index]
+        primary["duplicate_count"] = int(primary.get("duplicate_count") or 1) + int(item.get("duplicate_count") or 1)
+        primary["merged_ranks"] = unique_values(primary.get("merged_ranks", ""), item.get("search_rank", ""))
+        primary["phone"] = unique_phone_values(primary.get("phone", ""), item.get("phone", ""))
+        for field in ("email", "owner_name_candidates", "contact_page", "about_page", "team_page"):
+            primary[field] = unique_values(primary.get(field, ""), item.get(field, ""))
+        for field in ("website", "address", "category", "hours_status", "review_rating", "review_count", "review_snippet"):
+            if not primary.get(field) and item.get(field):
+                primary[field] = item[field]
+        for key in keys | lead_identity_keys(primary):
+            key_to_index[key] = index
+
+    return merged
+
+
+def add_lead_intelligence(leads: list) -> list:
+    """Attach explainable score, confidence, and provenance metadata for the UI/export."""
+    intelligent_leads = []
+    for lead in merge_duplicate_leads(leads):
+        item = dict(lead)
+        score = 0
+        if item.get("business_name") and item.get("address"):
+            score += 10
+        if item.get("website"):
+            score += 10
+        if item.get("phone"):
+            score += 20
+        if item.get("email"):
+            score += 30
+        if item.get("owner_name_candidates"):
+            score += 10
+        if item.get("contact_page") or item.get("about_page") or item.get("team_page"):
+            score += 5
+        if item.get("review_rating"):
+            score += 5
+        try:
+            review_count = int(re.sub(r"\D", "", str(item.get("review_count", ""))) or 0)
+            if review_count >= 50:
+                score += 5
+        except ValueError:
+            pass
+        if int(item.get("pages_checked") or 0) > 0:
+            score += 5
+
+        sources = []
+        status = str(item.get("status", "")).lower()
+        if item.get("google_maps_directions") or "places" in status or "google_places" in status:
+            sources.append("Google Maps")
+        if "web_discovery" in status:
+            sources.append("Web search")
+        if int(item.get("pages_checked") or 0) > 0 or item.get("email") or item.get("owner_name_candidates"):
+            sources.append("Website crawl")
+        if not sources:
+            sources.append("Search result")
+
+        if score >= 65 and (item.get("email") or item.get("phone")):
+            confidence = "High"
+        elif score >= 35:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+
+        item["lead_score"] = min(score, 100)
+        item["data_confidence"] = confidence
+        item["data_sources"] = "; ".join(sources)
+        item["duplicate_count"] = int(item.get("duplicate_count") or 1)
+        item["merged_ranks"] = item.get("merged_ranks") or str(item.get("search_rank", ""))
+        intelligent_leads.append(item)
+
+    return sorted(intelligent_leads, key=parse_rank)
+
+
 def clean_netloc(netloc: str) -> str:
     netloc = netloc.lower().split(":")[0]
     if netloc.startswith("www."):
@@ -437,7 +595,7 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places", min_ra
             enriched = filtered_enriched
 
         enriched.sort(key=lambda r: scraper.parse_rank_num(r.get("search_rank", "")))
-        final_leads = enriched[:max_results]
+        final_leads = add_lead_intelligence(enriched)[:max_results]
 
         # Auto-save to CSV on disk matching CLI output format
         try:
@@ -507,12 +665,7 @@ def discover_places(query: str, max_results: int = 30, mode: str = "places", min
             except Exception:
                 enriched.append(futures[f])
 
-    def parse_rank(item):
-        m = re.search(r"\d+", str(item.get("search_rank", "")))
-        return int(m.group(0)) if m else 999
-
-    enriched.sort(key=parse_rank)
-    return enriched, meta
+    return add_lead_intelligence(enriched)[:max_results], meta
 
 
 # Global CORS handler for all responses

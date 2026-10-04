@@ -21,6 +21,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const statAvgRating = document.getElementById("stat-avg-rating");
 
   const filterResultsInput = document.getElementById("filter-results-input");
+  const leadQualityFilter = document.getElementById("lead-quality-filter");
+  const leadSortSelect = document.getElementById("lead-sort-select");
   const tableWrapper = document.getElementById("table-wrapper");
   const tableBody = document.getElementById("table-body");
   const cardsContainer = document.getElementById("cards-container");
@@ -323,8 +325,38 @@ document.addEventListener("DOMContentLoaded", () => {
     statTotalPhones.textContent = phoneCount;
     statAvgRating.textContent = scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : "—";
 
-    renderTable(leads);
-    renderCards(leads);
+    renderLeadView();
+  }
+
+  function getDisplayedLeads() {
+    const term = filterResultsInput.value.toLowerCase().trim();
+    const quality = leadQualityFilter.value;
+    const sortBy = leadSortSelect.value;
+    const filtered = currentLeads.filter((lead) => {
+      const matchesText = !term || [
+        lead.business_name, lead.category, lead.address, lead.phone, lead.email,
+        lead.owner_name_candidates, lead.review_snippet, lead.hours_status,
+        lead.data_sources, lead.data_confidence,
+      ].some((value) => (value || "").toLowerCase().includes(term));
+      if (!matchesText) return false;
+      if (quality === "email") return Boolean(lead.email);
+      if (quality === "phone") return Boolean(lead.phone);
+      if (quality === "high") return lead.data_confidence === "High";
+      if (quality === "duplicates") return Number(lead.duplicate_count || 1) > 1;
+      return true;
+    });
+
+    return filtered.sort((a, b) => {
+      if (sortBy === "score") return Number(b.lead_score || 0) - Number(a.lead_score || 0);
+      if (sortBy === "rating") return Number(b.review_rating || 0) - Number(a.review_rating || 0);
+      return Number((a.search_rank || "").replace(/\D/g, "")) - Number((b.search_rank || "").replace(/\D/g, ""));
+    });
+  }
+
+  function renderLeadView() {
+    const displayedLeads = getDisplayedLeads();
+    renderTable(displayedLeads);
+    renderCards(displayedLeads);
   }
 
   // Helper to create expandable cell content
@@ -356,7 +388,7 @@ document.addEventListener("DOMContentLoaded", () => {
     tableBody.innerHTML = "";
 
     if (leads.length === 0) {
-      tableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 2rem;">No matching listings found.</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="14" style="text-align: center; color: var(--text-muted); padding: 2rem;">No matching listings found.</td></tr>`;
       return;
     }
 
@@ -403,6 +435,9 @@ document.addEventListener("DOMContentLoaded", () => {
       tr.innerHTML = `
         <!-- Rank -->
         <td class="rank-cell">#${escapeHtml(rankNum)}</td>
+
+        <!-- Contactability score -->
+        <td><span class="lead-score-badge">${escapeHtml(String(lead.lead_score ?? 0))}</span></td>
 
         <!-- Business Name & Category -->
         <td>
@@ -459,6 +494,13 @@ document.addEventListener("DOMContentLoaded", () => {
         <td style="text-align: right; white-space: nowrap;">
           ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link" title="Visit Official Website">Website ↗</a><br>` : ""}
           ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" title="Open Google Maps Directions" style="color: var(--text-muted);">Maps ↗</a>` : ""}
+        </td>
+
+        <!-- Confidence and sources -->
+        <td>
+          <div class="confidence-tag ${escapeHtml((lead.data_confidence || "low").toLowerCase())}">${escapeHtml(lead.data_confidence || "Low")} confidence</div>
+          <div class="source-list">${escapeHtml(lead.data_sources || "Search result")}</div>
+          ${Number(lead.duplicate_count || 1) > 1 ? `<div class="duplicate-note">Merged ${escapeHtml(String(lead.duplicate_count))} duplicates</div>` : ""}
         </td>
 
         <!-- Status -->
@@ -524,6 +566,7 @@ document.addEventListener("DOMContentLoaded", () => {
           <div style="display: flex; align-items: center; gap: 0.4rem;">
             <span style="font-family: var(--font-mono); font-size: 0.78rem; font-weight: 700; color: var(--accent-primary);">#${escapeHtml(rankNum)}</span>
             ${lead.category ? `<span class="category-tag">${escapeHtml(lead.category)}</span>` : ""}
+            <span class="lead-score-badge">${escapeHtml(String(lead.lead_score ?? 0))}</span>
           </div>
           <div style="text-align: right;">
             ${lead.review_rating ? `<span class="rating-tag">★ ${escapeHtml(lead.review_rating)}</span>` : ""}
@@ -532,6 +575,10 @@ document.addEventListener("DOMContentLoaded", () => {
         </div>
         <div class="card-item-title">${escapeHtml(lead.business_name || "Unknown")}</div>
         <div class="card-details">
+          <div class="card-row">
+            <span class="card-row-label">Quality</span>
+            <div><span class="confidence-tag ${escapeHtml((lead.data_confidence || "low").toLowerCase())}">${escapeHtml(lead.data_confidence || "Low")}</span><span class="source-list">${escapeHtml(lead.data_sources || "Search result")}</span></div>
+          </div>
           ${lead.phone ? `
             <div class="card-row">
               <span class="card-row-label">Phone</span>
@@ -601,31 +648,10 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Filter in table
-  filterResultsInput.addEventListener("input", (e) => {
-    const term = e.target.value.toLowerCase().trim();
-    if (!term) {
-      renderTable(currentLeads);
-      renderCards(currentLeads);
-      return;
-    }
-
-    const filtered = currentLeads.filter((l) => {
-      return (
-        (l.business_name || "").toLowerCase().includes(term) ||
-        (l.category || "").toLowerCase().includes(term) ||
-        (l.address || "").toLowerCase().includes(term) ||
-        (l.phone || "").toLowerCase().includes(term) ||
-        (l.email || "").toLowerCase().includes(term) ||
-        (l.owner_name_candidates || "").toLowerCase().includes(term) ||
-        (l.review_snippet || "").toLowerCase().includes(term) ||
-        (l.hours_status || "").toLowerCase().includes(term)
-      );
-    });
-
-    renderTable(filtered);
-    renderCards(filtered);
-  });
+  // Lead search, qualification filters, and score/rating sorting
+  filterResultsInput.addEventListener("input", renderLeadView);
+  leadQualityFilter.addEventListener("change", renderLeadView);
+  leadSortSelect.addEventListener("change", renderLeadView);
 
   // Copy all emails
   copyEmailsBtn.addEventListener("click", () => {
@@ -679,6 +705,11 @@ document.addEventListener("DOMContentLoaded", () => {
       "google_maps_directions",
       "pages_checked",
       "status",
+      "lead_score",
+      "data_confidence",
+      "data_sources",
+      "duplicate_count",
+      "merged_ranks",
     ];
 
     const rows = [fields.join(",")];
@@ -714,4 +745,3 @@ document.addEventListener("DOMContentLoaded", () => {
       .replace(/'/g, "&#039;");
   }
 });
-

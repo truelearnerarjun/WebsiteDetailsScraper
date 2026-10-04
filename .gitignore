@@ -49,3 +49,5 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+scratch/
+*.png
