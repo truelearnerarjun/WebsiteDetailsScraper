@@ -9,6 +9,8 @@ import time
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
+_places_lock = Lock()
+import urllib.parse
 from urllib.parse import unquote, urldefrag, urljoin, urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -31,10 +33,10 @@ if hasattr(sys.stdout, "reconfigure"):
         pass
 
 # Concurrency & Rate Limiting
-MAX_WORKERS = 4
-REQUEST_DELAY = 1.0  # delay between consecutive requests to the same site (seconds)
-MAX_PAGES_PER_SITE = 8
-REQUEST_TIMEOUT = 12
+MAX_WORKERS = 6
+REQUEST_DELAY = 0.2  # delay between consecutive requests to the same site (seconds)
+MAX_PAGES_PER_SITE = 4
+REQUEST_TIMEOUT = 7
 
 # Search Configuration
 # 1. Mode: "places" (Google Places local businesses) or "web" (traditional web search)
@@ -517,6 +519,183 @@ def check_search_rank(target_website: str, keyword: str, max_depth: int = SEARCH
         return f"SEARCH_ERR: {str(err)[:25]}"
 
 
+def parse_tbm_map_response(body_text: str) -> list:
+    """
+    Parse Google Maps internal tbm=map JSON/protobuf responses.
+    Authoritatively extracts phone numbers, official websites, ratings, review counts,
+    full addresses, categories, opening hours, and review snippets directly from Google Maps backend stream.
+    """
+    if not body_text:
+        return []
+
+    candidates_raw = []
+    decoder = json.JSONDecoder()
+    pos = 0
+    while pos < len(body_text):
+        while pos < len(body_text) and body_text[pos].isspace():
+            pos += 1
+        if pos >= len(body_text):
+            break
+        try:
+            obj, end_pos = decoder.raw_decode(body_text, idx=pos)
+            if isinstance(obj, dict) and "d" in obj and isinstance(obj["d"], str):
+                candidates_raw.append(obj["d"])
+            pos = end_pos
+        except Exception:
+            p_brace = body_text.find("{", pos + 1)
+            p_bracket = body_text.find("[", pos + 1)
+            if p_brace != -1 and (p_bracket == -1 or p_brace < p_bracket):
+                pos = p_brace
+            elif p_bracket != -1:
+                pos = p_bracket
+            else:
+                break
+
+    if not candidates_raw:
+        candidates_raw = [body_text]
+
+    extracted_items = []
+    seen = set()
+
+    for raw_chunk in candidates_raw:
+        prefix = ")]}'\n"
+        if raw_chunk.startswith(prefix):
+            clean = raw_chunk[len(prefix):]
+        elif ")]}'" in raw_chunk:
+            clean = raw_chunk.split(")]}'", 1)[1].strip()
+        else:
+            clean = raw_chunk
+
+        try:
+            data = json.loads(clean)
+        except Exception:
+            m = re.search(r'\[.*\]', clean, re.DOTALL)
+            if m:
+                try:
+                    data = json.loads(m.group(0))
+                except Exception:
+                    continue
+            else:
+                continue
+
+        candidates_list = []
+        def _find_lists(obj, depth=0):
+            if depth > 5:
+                return
+            if isinstance(obj, list):
+                place_like = [x for x in obj if isinstance(x, list) and len(x) >= 2 and isinstance(x[1], list) and len(x[1]) > 15]
+                if len(place_like) >= 2:
+                    candidates_list.append(place_like)
+                    return
+                for sub in obj:
+                    _find_lists(sub, depth + 1)
+        _find_lists(data)
+        if not candidates_list:
+            continue
+        candidates_list.sort(key=len, reverse=True)
+        raw_places = candidates_list[0]
+
+        for p in raw_places:
+            try:
+                p_data = p[1]
+                name = p_data[11] if len(p_data) > 11 and isinstance(p_data[11], str) else ""
+                if not name or name in seen:
+                    continue
+                seen.add(name)
+
+                category = p_data[13][0] if len(p_data) > 13 and p_data[13] and isinstance(p_data[13], list) else ""
+                rating = str(p_data[4][7]) if len(p_data) > 4 and p_data[4] and len(p_data[4]) > 7 and p_data[4][7] is not None else ""
+                reviews = str(p_data[4][8]) if len(p_data) > 4 and p_data[4] and len(p_data[4]) > 8 and p_data[4][8] is not None else ""
+                address = p_data[39] if len(p_data) > 39 and p_data[39] and isinstance(p_data[39], str) else (p_data[18] if len(p_data) > 18 and isinstance(p_data[18], str) else "")
+                website = p_data[7][0] if len(p_data) > 7 and p_data[7] and len(p_data[7]) > 0 and isinstance(p_data[7][0], str) and p_data[7][0].startswith("http") else ""
+
+                phone = ""
+                if len(p_data) > 178 and p_data[178] and isinstance(p_data[178], list) and len(p_data[178]) > 0:
+                    p_sub = p_data[178][0]
+                    if isinstance(p_sub, list):
+                        phone = p_sub[0] or (p_sub[3] if len(p_sub) > 3 else "")
+
+                if not phone:
+                    def _deep_phone(val):
+                        if isinstance(val, str):
+                            if val.startswith("tel:"):
+                                return val.replace("tel:", "").strip()
+                        elif isinstance(val, list):
+                            for sub in val:
+                                r = _deep_phone(sub)
+                                if r:
+                                    return r
+                        return ""
+                    phone = _deep_phone(p_data)
+
+                cid = p_data[10] if len(p_data) > 10 and isinstance(p_data[10], str) else ""
+
+                # Hours status
+                hours_status = ""
+                try:
+                    if len(p_data) > 34 and p_data[34] and isinstance(p_data[34], list):
+                        for h_item in p_data[34]:
+                            if isinstance(h_item, list):
+                                for str_cand in h_item:
+                                    if isinstance(str_cand, str) and any(k in str_cand.lower() for k in ["open", "closed", "closes"]):
+                                        hours_status = str_cand
+                                        break
+                except Exception:
+                    pass
+
+                # Review snippet
+                snippet = ""
+                try:
+                    if len(p_data) > 142 and p_data[142] and isinstance(p_data[142], list):
+                        sub = p_data[142]
+                        if len(sub) > 1 and isinstance(sub[1], list) and len(sub[1]) > 0:
+                            s_item = sub[1][0]
+                            if isinstance(s_item, list) and len(s_item) > 1 and isinstance(s_item[1], list) and len(s_item[1]) > 0:
+                                s_text = s_item[1][0]
+                                if isinstance(s_text, list) and len(s_text) > 0 and isinstance(s_text[0], str):
+                                    snippet = s_text[0].strip('" ')
+                except Exception:
+                    pass
+
+                extracted_items.append({
+                    "name": name,
+                    "category": category,
+                    "rating": rating,
+                    "reviews": reviews,
+                    "address": address,
+                    "phone": phone,
+                    "website": website,
+                    "cid": cid,
+                    "hours_status": hours_status,
+                    "snippet": snippet,
+                })
+            except Exception:
+                continue
+
+    return extracted_items
+
+
+def find_business_website_ddg(name: str, query: str = "") -> str:
+    """Auto-discover official business website if Google Maps omitted it."""
+    if not name:
+        return ""
+    try:
+        clean_name = re.split(r"[-|:·]", name)[0].strip()
+        search_term = f"{clean_name} official website"
+        results = list(DDGS().text(search_term, max_results=3))
+        for r in results:
+            href = r.get("href", "")
+            if href and "google.com" not in href and not any(x in href.lower() for x in [
+                "facebook.com", "instagram.com", "youtube.com", "zomato.com", "swiggy.com",
+                "justdial.com", "indiamart.com", "sulekha.com", "practo.com", "lybrate.com",
+                "wikipedia.org", "twitter.com", "x.com", "linkedin.com"
+            ]):
+                return href
+    except Exception:
+        pass
+    return ""
+
+
 def search_google_places(
     keyword: str,
     max_results: int = SEARCH_RANK_DEPTH,
@@ -527,12 +706,12 @@ def search_google_places(
     max_rating: float = 0.0,
 ) -> list:
     """
-    Search Google Places (udm=local) for real local business listings.
-    Supports filter highlights: Top rated (accurate ratings), Open now, and Distance radius.
+    Search Google Places / Google Maps for authentic local business listings.
+    Uses Google Maps feed scrolling and network stream interception (tbm=map) to reliably
+    discover genuine phone numbers, official websites, authentic ratings, and addresses.
     """
-    print(f"\n[+] Searching Google Places for: '{keyword}' (targeting {max_results} places)...")
+    print(f"\n[+] Searching Google Places for: '{keyword}' (targeting {max_results} places)...", flush=True)
 
-    # Build search query incorporating filter highlights
     query_parts = [keyword]
     if top_rated and not any(k in keyword.lower() for k in ["best", "top rated", "top-rated"]):
         query_parts.append("top rated")
@@ -542,203 +721,357 @@ def search_google_places(
         query_parts.append(distance)
 
     full_query = " ".join(query_parts)
-    print(f"[+] Effective Places Query: '{full_query}'")
-    if top_rated:
-        print("[+] Filter Highlight: [Top rated] enabled (accurate official Google ratings)")
-    if open_now:
-        print("[+] Filter Highlight: [Open now] enabled (currently open places only)")
-    if distance:
-        print(f"[+] Filter Highlight: [{distance}] enabled")
+    print(f"[+] Effective Places Query: '{full_query}'", flush=True)
 
     discovered = []
     seen_names = set()
+    intercepted_data = {}
+    intercepted_by_clean = {}
 
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        print("[!] Playwright is not installed. Falling back to web search...")
+        print("[!] Playwright is not installed. Falling back to web search...", flush=True)
         return search_keyword_leads(keyword, max_results=max_results)
 
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=True,
-                args=[
-                    "--no-sandbox",
-                    "--disable-gpu",
-                    "--disable-blink-features=AutomationControlled",
-                    "--disable-dev-shm-usage",
-                ],
-                ignore_default_args=["--enable-automation"],
-            )
-            context = browser.new_context(
-                user_agent=USER_AGENT,
-                viewport={"width": 1366, "height": 900},
-                locale="en-IN",
-            )
-            context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            page = context.new_page()
+        with _places_lock:
+            with sync_playwright() as p:
+                print("[Places] Launching Chromium...", flush=True)
+                browser = p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-gpu",
+                        "--disable-dev-shm-usage",
+                        "--disable-breakpad",
+                    ],
+                )
+                try:
+                    print("[Places] Creating browser context...", flush=True)
+                    context = browser.new_context(
+                        user_agent=USER_AGENT,
+                        viewport={"width": 1440, "height": 900},
+                        locale="en-IN",
+                    )
+                    page = context.new_page()
 
-            start = 0
-            max_start = max(100, ((max_results // 20) + 3) * 20)
-            while len(discovered) < max_results and start < max_start:
-                url = f"https://www.google.com/search?q={full_query.replace(' ', '+')}&udm=local&start={start}"
-                page.goto(url, wait_until="domcontentloaded", timeout=25000)
-                time.sleep(3)
+                    pending_tbm = []
+                    page.on("response", lambda r: pending_tbm.append(r) if "tbm=map" in r.url else None)
 
-                page_items = page.evaluate("""() => {
-                    const results = [];
-                    const cards = Array.from(document.querySelectorAll('div.cXedhc'));
-                    for (const card of cards) {
-                        const nameEl = card.querySelector('span.OSrXXb, div.dbg0pd');
-                        const name = nameEl ? nameEl.innerText.trim() : '';
-                        if (!name) continue;
+                    encoded_kw = urllib.parse.quote(full_query)
+                    maps_url = f"https://www.google.com/maps/search/{encoded_kw}"
+                    print(f"[Places] Navigating to Google Maps: {maps_url} ...", flush=True)
+                    page.goto(maps_url, wait_until="commit", timeout=20000)
+                    print("[Places] Maps page loaded. Waiting for places feed...", flush=True)
+                    try:
+                        page.wait_for_selector('div[role="feed"], div.Nv2PK', timeout=12000)
+                        print("[Places] Feed selector found!", flush=True)
+                    except Exception as feed_err:
+                        print(f"[Places] Feed selector wait exception: {feed_err}, waiting fallback...", flush=True)
+                        page.wait_for_timeout(2500)
 
-                        const ratingEl = card.querySelector('span.yi40Hd');
-                        const rating = ratingEl ? ratingEl.innerText.trim() : '';
+                    scroll_attempts = 0
+                    max_scrolls = max(14, (max_results // 2) + 8)
+                    last_feed_count = 0
+                    stuck_count = 0
 
-                        const reviewEl = card.querySelector('span.RDApEe');
-                        const reviewCount = reviewEl ? reviewEl.innerText.trim().replace(/[()]/g, '') : '';
+                    while len(discovered) < max_results and scroll_attempts < max_scrolls:
+                        scroll_attempts += 1
 
-                        const details = card.querySelector('div.rllt__details');
-                        const lines = details ? Array.from(details.children).map(c => c.innerText.trim()) : [];
+                        # Safely parse pending tbm=map stream responses in main loop
+                        while pending_tbm:
+                            res_item = pending_tbm.pop(0)
+                            try:
+                                body = res_item.text()
+                                parsed = parse_tbm_map_response(body)
+                                for p_item in parsed:
+                                    n = p_item["name"].strip()
+                                    if n and n not in intercepted_data:
+                                        intercepted_data[n] = p_item
+                                        clean_k = re.sub(r"[^a-zA-Z0-9]", "", n).lower()
+                                        intercepted_by_clean[clean_k] = p_item
+                            except Exception:
+                                pass
 
-                        let container = card;
-                        while (container && container !== document.body) {
-                            if (container.querySelector('a.yYlJEf, a[href*="/goto"], a[aria-label*="Website"]')) {
-                                break;
+                        cards_data = page.evaluate("""() => {
+                            const feed = document.querySelector('div[role="feed"]');
+                            if (!feed) return [];
+                            const links = Array.from(feed.querySelectorAll('a[href*="/maps/place/"]'));
+                            const out = [];
+
+                            for (const a of links) {
+                                const card = a.closest('div.Nv2PK') || a.parentElement;
+                                const name = a.getAttribute('aria-label') || a.innerText.trim();
+                                if (!name) continue;
+
+                                // Rating
+                                const ratingEl = card.querySelector('span.MW4etd');
+                                const rating = ratingEl ? ratingEl.innerText.trim() : '';
+
+                                // Review Count
+                                let reviewCount = '';
+                                const revEl = card.querySelector('span.UY7F9, span[aria-label*="reviews"]');
+                                if (revEl) {
+                                    reviewCount = revEl.innerText.replace(/[()]/g, '').trim();
+                                }
+
+                                // Website link
+                                const webEl = card.querySelector('a[data-value="Website"], a[aria-label*="website" i]');
+                                const website = webEl ? (webEl.getAttribute('href') || webEl.href) : '';
+
+                                // Place URL
+                                const placeUrl = a.href || '';
+
+                                // Details text lines
+                                const textLines = Array.from(card.querySelectorAll('div.W4Efsd')).map(el => el.innerText.trim()).filter(Boolean);
+
+                                out.push({
+                                    name,
+                                    rating,
+                                    reviewCount,
+                                    website,
+                                    placeUrl,
+                                    textLines,
+                                });
                             }
-                            container = container.parentElement;
-                        }
+                            return out;
+                        }""")
+                        print(f"[Places Scroll #{scroll_attempts}] Extracted {len(cards_data)} DOM cards, intercepted {len(intercepted_data)} raw places (total discovered: {len(discovered)})", flush=True)
 
-                        let gotoHref = '';
-                        let directionsHref = '';
-                        if (container && container !== document.body) {
-                            const webA = container.querySelector('a.yYlJEf, a[href*="/goto"], a[aria-label*="Website"]');
-                            if (webA) gotoHref = webA.getAttribute('href') || webA.href;
-                            const dirA = container.querySelector('a[href*="/maps/dir/"]');
-                            if (dirA) directionsHref = dirA.href;
-                        }
-
-                        results.push({
-                            name,
-                            rating,
-                            reviewCount,
-                            lines,
-                            gotoHref,
-                            directionsHref,
-                        });
-                    }
-                    return results;
-                }""")
-
-                if not page_items:
-                    break
-
-                for item in page_items:
-                    name = item["name"]
-                    if not name or name in seen_names:
-                        continue
-
-                    rating = item.get("rating", "")
-                    reviews = item.get("reviewCount", "")
-
-                    if min_rating > 0.0 and rating:
-                        try:
-                            if float(rating) < min_rating:
+                        for item in cards_data:
+                            name = item["name"].strip()
+                            if not name or name in seen_names:
                                 continue
-                        except ValueError:
-                            pass
 
-                    if max_rating > 0.0 and rating:
-                        try:
-                            if float(rating) >= max_rating:
-                                continue
-                        except ValueError:
-                            pass
+                            rating = item.get("rating", "")
+                            review_count = item.get("reviewCount", "")
+                            website = item.get("website", "")
+                            place_url = item.get("placeUrl", "")
+                            text_lines = item.get("textLines", [])
 
-                    seen_names.add(name)
-                    lines = item.get("lines", [])
+                            # Match against intercepted tbm=map stream data
+                            clean_name_key = re.sub(r"[^a-zA-Z0-9]", "", name).lower()
+                            tbm_info = intercepted_data.get(name) or intercepted_by_clean.get(clean_name_key)
+                            if not tbm_info:
+                                for k_clean, v in intercepted_by_clean.items():
+                                    if len(k_clean) >= 6 and (k_clean in clean_name_key or clean_name_key in k_clean):
+                                        tbm_info = v
+                                        break
 
-                    category = ""
-                    address = ""
-                    phone = ""
-                    hours_status = ""
-                    snippet = ""
+                            category = ""
+                            address = ""
+                            phone = ""
+                            hours_status = ""
+                            snippet = ""
 
-                    for idx_l, line in enumerate(lines):
-                        if "·" in line and any(c.isdigit() for c in line) and idx_l <= 1:
-                            parts = line.split("·")
-                            if len(parts) > 1:
-                                category = parts[-1].strip()
-                        elif any(k in line.lower() for k in ["road", "marg", "sector", "shop", "plot", "building", "complex", "society", "nagar", "station", "opp", "near"]):
-                            m_phone = PHONE_CLEAN_REGEX.search(line)
-                            if m_phone and len(re.sub(r"\D", "", m_phone.group(0))) >= 10:
-                                phone = m_phone.group(0).strip()
-                                clean_addr = line.replace(phone, "").replace("·", "").strip()
-                                address = clean_addr.strip(",.- ")
+                            if tbm_info:
+                                if not phone and tbm_info.get("phone"):
+                                    phone = tbm_info["phone"]
+                                if not website and tbm_info.get("website"):
+                                    website = tbm_info["website"]
+                                if not rating and tbm_info.get("rating"):
+                                    rating = tbm_info["rating"]
+                                if not review_count and tbm_info.get("reviews"):
+                                    review_count = tbm_info["reviews"]
+                                if tbm_info.get("address"):
+                                    address = tbm_info["address"]
+                                if tbm_info.get("category"):
+                                    category = tbm_info["category"]
+                                if tbm_info.get("snippet"):
+                                    snippet = tbm_info["snippet"]
+                                if tbm_info.get("hours_status"):
+                                    hours_status = tbm_info["hours_status"]
+
+                            for raw_line in text_lines:
+                                sublines = raw_line.replace("\u202f", " ").replace("\xa0", " ").replace("\ufeff", "").split("\n")
+                                for subline in sublines:
+                                    sub_parts = [p.strip() for p in subline.split("·") if p.strip()]
+                                    for idx_p, part in enumerate(sub_parts):
+                                        part_clean = re.sub(r"[\ue000-\uf8ff]", "", part).strip()
+                                        if not part_clean:
+                                            continue
+
+                                        # 1. Phone number check from card
+                                        digits_only = re.sub(r"\D", "", part_clean)
+                                        is_phone = (
+                                            (len(digits_only) == 10 and digits_only[0] in "6789") or
+                                            (len(digits_only) == 11 and digits_only.startswith("0") and digits_only[1] in "123456789") or
+                                            (len(digits_only) == 12 and digits_only.startswith("91") and digits_only[2] in "6789") or
+                                            (len(digits_only) in (10, 11) and digits_only.startswith("022")) or
+                                            (len(digits_only) >= 10 and bool(PHONE_CLEAN_REGEX.search(part_clean)))
+                                        )
+                                        if is_phone:
+                                            if not phone:
+                                                phone = part_clean
+                                            continue
+
+                                        # 2. Hours status check
+                                        if any(k in part_clean.lower() for k in ["open", "closed", "closes", "open 24 hours"]):
+                                            if not hours_status:
+                                                hours_status = re.sub(r"\s+", " ", part_clean).strip()
+                                            elif part_clean.lower() not in hours_status.lower():
+                                                hours_status = f"{hours_status} · {re.sub(r'\s+', ' ', part_clean).strip()}"
+                                            continue
+
+                                        # 3. Category check
+                                        if not category and idx_p == 0 and len(part_clean) < 45 and not any(c.isdigit() for c in part_clean) and not any(k in part_clean.lower() for k in ["road", "marg", "near", "opp", "floor", "street", "sector", "plot", "bldg", "complex", "society"]):
+                                            category = re.sub(r"\s+", " ", part_clean).strip()
+                                            continue
+
+                                        # 4. Address keywords check
+                                        if any(k in part_clean.lower() for k in ["road", "marg", "sector", "shop no", "plot", "building", "complex", "society", "nagar", "station", "opp", "near", "floor", "gala", "lane", "street", "bldg", "ave", "block", "bazaar", "west", "east", "mumbai", "navi mumbai"]):
+                                            if not address or len(part_clean) > len(address):
+                                                address = re.sub(r"\s+", " ", part_clean).strip()
+                                            continue
+
+                                        # 5. Review snippet
+                                        if part_clean.startswith('"') or any(k in part_clean.lower() for k in ["patisserie", "specialist", "bakery", "delicious", "service", "experienced", "caring", "authentic", "friendly", "recommend"]):
+                                            if not snippet:
+                                                snippet = re.sub(r"\s+", " ", part_clean).strip()
+                                            continue
+
+                                        # 6. Fallback address / snippet
+                                        if not address and len(part_clean) > 15 and not any(k in part_clean.lower() for k in ["delivery", "dine-in", "takeaway", "curbside"]):
+                                            address = re.sub(r"\s+", " ", part_clean).strip()
+
+                            address = re.sub(r"\s+", " ", address).strip()
+
+                            if min_rating > 0.0 and rating:
+                                try:
+                                    if float(rating) < min_rating:
+                                        continue
+                                except ValueError:
+                                    pass
+
+                            if max_rating > 0.0 and rating:
+                                try:
+                                    if float(rating) >= max_rating:
+                                        continue
+                                except ValueError:
+                                    pass
+
+                            seen_names.add(name)
+
+                            cid_match = re.search(r"!1s(0x[0-9a-fA-F]+:0x[0-9a-fA-F]+)", place_url)
+                            cid = cid_match.group(1) if cid_match else (tbm_info.get("cid", "") if tbm_info else "")
+                            dest = f"{address}, {name}" if address else name
+                            if cid:
+                                maps_dir = f"https://www.google.com/maps/dir//{urllib.parse.quote(dest)}/data=!4m6!4m5!1m1!4e2!1m2!1m1!{cid}?sa=X&ved=1t:57443&ictx=111"
                             else:
-                                address = line.strip("· ")
-                        elif not phone and PHONE_CLEAN_REGEX.search(line):
-                            m_phone = PHONE_CLEAN_REGEX.search(line)
-                            if m_phone and len(re.sub(r"\D", "", m_phone.group(0))) >= 10:
-                                phone = m_phone.group(0).strip()
-                        elif any(k in line.lower() for k in ["open", "closed", "closes"]):
-                            hours_status = line.strip()
-                        elif line.startswith('"'):
-                            snippet = line.strip()
+                                maps_dir = f"https://www.google.com/maps/dir//{urllib.parse.quote(dest)}"
 
-                    website = ""
-                    goto_href = item.get("gotoHref", "")
-                    if goto_href:
-                        if goto_href.startswith("/"):
-                            goto_href = "https://www.google.com" + goto_href
-                        try:
-                            resp = page.request.get(goto_href, headers={"Referer": page.url}, timeout=6000)
-                            website = resp.url
-                        except Exception:
-                            website = goto_href
+                            rank_num = len(discovered) + 1
+                            discovered.append({
+                                "search_rank": f"#{rank_num}",
+                                "business_name": name,
+                                "category": category or "Local Business",
+                                "review_rating": rating,
+                                "review_count": review_count,
+                                "phone": phone,
+                                "address": address,
+                                "hours_status": hours_status,
+                                "website": website,
+                                "keyword": keyword,
+                                "review_snippet": snippet,
+                                "contact_page": "",
+                                "about_page": "",
+                                "team_page": "",
+                                "owner_name_candidates": "",
+                                "email": "",
+                                "google_maps_directions": maps_dir,
+                                "pages_checked": 0,
+                                "status": "places_only",
+                            })
 
-                    directions_url = item.get("directionsHref", "")
-                    if "google.com/maps" in website:
-                        if not directions_url:
-                            directions_url = website
-                        website = ""
+                            if len(discovered) >= max_results:
+                                break
 
-                    rank_num = len(discovered) + 1
-                    discovered.append({
-                        "search_rank": f"#{rank_num}",
-                        "business_name": name,
-                        "category": category,
-                        "review_rating": rating,
-                        "review_count": reviews,
-                        "phone": phone,
-                        "address": address,
-                        "hours_status": hours_status,
-                        "review_snippet": snippet,
-                        "website": website,
-                        "google_maps_directions": directions_url,
-                        "keyword": keyword,
-                    })
+                        if len(discovered) >= max_results:
+                            break
 
-                    if len(discovered) >= max_results:
-                        break
+                        # Scroll feed down to load more cards
+                        page.evaluate("""() => {
+                            const feed = document.querySelector('div[role="feed"]');
+                            if (feed) feed.scrollTop = feed.scrollHeight;
+                        }""")
+                        page.wait_for_timeout(1800)
 
-                start += 20
+                        if len(cards_data) == last_feed_count and len(intercepted_data) == last_feed_count:
+                            stuck_count += 1
+                            if stuck_count >= 4:
+                                break
+                        else:
+                            stuck_count = 0
+                        last_feed_count = max(len(cards_data), len(intercepted_data))
 
-            browser.close()
+                    # Supplement from intercepted network stream if DOM had fewer cards than requested
+                    if len(discovered) < max_results:
+                        for n_cand, tbm_item in intercepted_data.items():
+                            if n_cand in seen_names:
+                                continue
+                            clean_c = re.sub(r"[^a-zA-Z0-9]", "", n_cand).lower()
+                            if any(clean_c == re.sub(r"[^a-zA-Z0-9]", "", s).lower() for s in seen_names):
+                                continue
+
+                            r_val = tbm_item.get("rating", "")
+                            if min_rating > 0.0 and r_val:
+                                try:
+                                    if float(r_val) < min_rating:
+                                        continue
+                                except ValueError:
+                                    pass
+                            if max_rating > 0.0 and r_val:
+                                try:
+                                    if float(r_val) >= max_rating:
+                                        continue
+                                except ValueError:
+                                    pass
+
+                            seen_names.add(n_cand)
+                            dest = f"{tbm_item.get('address', '')}, {n_cand}" if tbm_item.get("address") else n_cand
+                            cid_val = tbm_item.get("cid", "")
+                            if cid_val:
+                                maps_dir = f"https://www.google.com/maps/dir//{urllib.parse.quote(dest)}/data=!4m6!4m5!1m1!4e2!1m2!1m1!{cid_val}?sa=X&ved=1t:57443&ictx=111"
+                            else:
+                                maps_dir = f"https://www.google.com/maps/dir//{urllib.parse.quote(dest)}"
+
+                            rank_num = len(discovered) + 1
+                            discovered.append({
+                                "search_rank": f"#{rank_num}",
+                                "business_name": n_cand,
+                                "category": tbm_item.get("category") or "Local Business",
+                                "review_rating": r_val,
+                                "review_count": tbm_item.get("reviews", ""),
+                                "phone": tbm_item.get("phone", ""),
+                                "address": tbm_item.get("address", ""),
+                                "hours_status": tbm_item.get("hours_status", ""),
+                                "website": tbm_item.get("website", ""),
+                                "keyword": keyword,
+                                "review_snippet": tbm_item.get("snippet", ""),
+                                "contact_page": "",
+                                "about_page": "",
+                                "team_page": "",
+                                "owner_name_candidates": "",
+                                "email": "",
+                                "google_maps_directions": maps_dir,
+                                "pages_checked": 0,
+                                "status": "places_only",
+                            })
+                            if len(discovered) >= max_results:
+                                break
+
+                finally:
+                    try:
+                        browser.close()
+                    except Exception:
+                        pass
     except Exception as e:
-        print(f"[!] Error during Google Places search: {e}")
-        if not discovered:
-            print("[*] Falling back to web search discovery...")
-            return search_keyword_leads(keyword, max_results=max_results)
+        print(f"[!] Error during Google Places search: {e}", flush=True)
 
-    if not discovered:
-        print("[*] No Google Places entries found (or bot check triggered). Falling back to web search discovery...")
-        return search_keyword_leads(keyword, max_results=max_results)
-
-    print(f"[+] Discovered {len(discovered)} Google Places entries for '{keyword}'.\n")
+    print(f"[+] Discovered {len(discovered)} Google Places entries for '{keyword}'.\n", flush=True)
     return discovered
+
 
 
 def search_keyword_leads(keyword: str, max_results: int = SEARCH_RANK_DEPTH) -> list:

@@ -151,7 +151,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (ratingCustomInput) {
         if (selectedRatingMode === "under") {
           ratingCustomInput.style.display = "inline-block";
-          if (!ratingCustomInput.value || parseFloat(ratingCustomInput.value) > 4.5) {
+          if (!ratingCustomInput.value || parseFloat(ratingCustomInput.value) <= 0 || parseFloat(ratingCustomInput.value) > 4.5) {
             ratingCustomInput.value = "4.0";
           }
           ratingCustomInput.placeholder = "4.0";
@@ -170,10 +170,39 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
+  // Global Expand / Collapse State
+  let isGlobalExpanded = false;
+  const toggleExpandAllBtn = document.getElementById("toggle-expand-all-btn");
+  const expandAllIcon = document.getElementById("expand-all-icon");
+  const expandAllText = document.getElementById("expand-all-text");
+
+  if (toggleExpandAllBtn) {
+    toggleExpandAllBtn.addEventListener("click", () => {
+      isGlobalExpanded = !isGlobalExpanded;
+      if (expandAllIcon) expandAllIcon.textContent = isGlobalExpanded ? "⤡" : "⤢";
+      if (expandAllText) expandAllText.textContent = isGlobalExpanded ? "Collapse All" : "Expand All";
+
+      document.querySelectorAll(".expandable-content").forEach((el) => {
+        if (isGlobalExpanded) {
+          el.classList.remove("collapsed");
+          el.classList.add("expanded");
+        } else {
+          el.classList.remove("expanded");
+          el.classList.add("collapsed");
+        }
+      });
+
+      document.querySelectorAll(".expand-toggle-btn").forEach((btn) => {
+        btn.textContent = isGlobalExpanded ? "Less ▴" : "More ▾";
+      });
+    });
+  }
+
   // Handle Form Submission
   searchForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     const query = queryInput.value.trim();
+    if (!query) return;
     currentQuery = query;
 
     if (window.location.protocol === "file:") {
@@ -201,10 +230,14 @@ document.addEventListener("DOMContentLoaded", () => {
     if (selectedRatingMode === "under") filterMsg = ` (Rating < ${maxRating})`;
     else if (selectedRatingMode === "over") filterMsg = ` (Rating ≥ ${minRating})`;
 
-    statusMessage.textContent = `Searching ${selectedMode === 'places' ? 'Google Places' : 'live web'} for "${query}"${filterMsg}...`;
+    statusMessage.textContent = `Searching ${selectedMode === 'places' ? 'Google Places / Maps' : 'live web'} for "${query}"${filterMsg}...`;
     statusCount.textContent = `Targeting ${selectedCount}`;
 
     emptyState.classList.add("hidden");
+
+    // Timeout controller (120 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 120000);
 
     try {
       const getUrl = `/api/scrape?q=${encodeURIComponent(query)}&n=${selectedCount}&mode=${selectedMode}&min_rating=${minRating}&max_rating=${maxRating}`;
@@ -214,21 +247,22 @@ document.addEventListener("DOMContentLoaded", () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query, count: selectedCount, mode: selectedMode, min_rating: minRating, max_rating: maxRating }),
+          signal: controller.signal,
         });
-      } catch (_) {
-        // POST aborted (e.g. static server rejecting POST) — retry with GET
-        response = await fetch(getUrl);
+      } catch (postErr) {
+        if (postErr.name === "AbortError") throw new Error("Request timed out after 120 seconds");
+        // Fallback retry with GET
+        response = await fetch(getUrl, { signal: controller.signal });
       }
 
-      // Static hosts reply 404/405/501 to POST; retry with GET
       if ([404, 405, 501].includes(response.status)) {
-        response = await fetch(getUrl);
+        response = await fetch(getUrl, { signal: controller.signal });
       }
 
       const isJson = (response.headers.get("content-type") || "").includes("application/json");
       if (!response.ok || !isJson) {
         if ([404, 405, 501].includes(response.status) || !isJson) {
-          throw new Error("Backend API not running here. Locally, run `python server.py` and open http://localhost:5050");
+          throw new Error("Backend server not responding. Please make sure `python server.py` is running on port 5050");
         }
         throw new Error(`HTTP ${response.status}`);
       }
@@ -237,17 +271,20 @@ document.addEventListener("DOMContentLoaded", () => {
       currentLeads = data.leads || [];
 
       renderResults(currentLeads);
-      showToast(`Extracted ${currentLeads.length} listings in rank order`);
+      showToast(`Extracted ${currentLeads.length} places in exact rank order`);
     } catch (err) {
-      console.error(err);
-      const msg = err instanceof TypeError
-        ? "Can't reach the backend. Run `python server.py` and open http://localhost:5050"
-        : err.message;
+      console.error("Search error:", err);
+      const msg = err.name === "AbortError"
+        ? "Request timed out. Please try again with a lower limit."
+        : (err instanceof TypeError
+            ? "Could not reach local server. Start it with `python server.py` and open http://localhost:5050"
+            : err.message);
       showToast(`Error: ${msg}`);
       if (currentLeads.length === 0) {
         emptyState.classList.remove("hidden");
       }
     } finally {
+      clearTimeout(timeoutId);
       statusBar.classList.add("hidden");
       submitBtn.disabled = false;
       btnSpinner.style.display = "none";
@@ -290,12 +327,36 @@ document.addEventListener("DOMContentLoaded", () => {
     renderCards(leads);
   }
 
+  // Helper to create expandable cell content
+  function createExpandableHtml(text, charThreshold = 55, extraClass = "", copyable = false) {
+    if (!text || text.trim() === "") {
+      return '<span style="color: var(--text-muted);">—</span>';
+    }
+
+    const clean = text.trim();
+    const isLong = clean.length > charThreshold || clean.includes(";") || clean.includes("\n");
+    const escaped = escapeHtml(clean);
+    const initialClass = isGlobalExpanded ? "expanded" : (isLong ? "collapsed" : "expanded");
+
+    if (!isLong) {
+      return `<div class="expandable-wrap"><div class="expandable-content expanded ${extraClass}" ${copyable ? `title="Click to copy"` : ""}>${escaped}</div></div>`;
+    }
+
+    const toggleText = isGlobalExpanded ? "Less ▴" : "More ▾";
+    return `
+      <div class="expandable-wrap">
+        <div class="expandable-content ${initialClass} ${extraClass}" ${copyable ? `title="Click to copy"` : ""}>${escaped}</div>
+        <button type="button" class="expand-toggle-btn">${toggleText}</button>
+      </div>
+    `;
+  }
+
   // Render Table View
   function renderTable(leads) {
     tableBody.innerHTML = "";
 
     if (leads.length === 0) {
-      tableBody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">No matching listings found.</td></tr>`;
+      tableBody.innerHTML = `<tr><td colspan="12" style="text-align: center; color: var(--text-muted); padding: 2rem;">No matching listings found.</td></tr>`;
       return;
     }
 
@@ -305,41 +366,143 @@ document.addEventListener("DOMContentLoaded", () => {
       const rankStr = lead.search_rank || "";
       const rankNum = rankStr.replace("#", "").padStart(2, "0");
 
+      // Hours tag style
+      const hoursLower = (lead.hours_status || "").toLowerCase();
+      let hoursClass = "";
+      if (hoursLower.includes("open") && !hoursLower.includes("opens")) hoursClass = "open";
+      else if (hoursLower.includes("closed") || hoursLower.includes("closes")) hoursClass = "closed";
+
+      // Status badge style
+      const statusLower = (lead.status || "").toLowerCase();
+      let statusClass = "places";
+      let statusLabel = lead.status || "places_only";
+      if (statusLower.includes("success")) {
+        statusClass = "success";
+        statusLabel = lead.pages_checked ? `Success (${lead.pages_checked} pgs)` : "Success";
+      } else if (statusLower.includes("error") || statusLower.includes("failed")) {
+        statusClass = "error";
+      } else if (statusLower.includes("places")) {
+        statusLabel = "Places only";
+      }
+
+      // Candidate pages chips (Contact, About, Team)
+      let pagesHtml = "";
+      if (lead.contact_page) {
+        pagesHtml += `<a href="${escapeHtml(lead.contact_page)}" target="_blank" rel="noopener" class="page-chip" title="Contact Page">Contact ↗</a>`;
+      }
+      if (lead.about_page) {
+        pagesHtml += `<a href="${escapeHtml(lead.about_page)}" target="_blank" rel="noopener" class="page-chip" title="About Page">About ↗</a>`;
+      }
+      if (lead.team_page) {
+        pagesHtml += `<a href="${escapeHtml(lead.team_page)}" target="_blank" rel="noopener" class="page-chip" title="Team/Doctors Page">Team ↗</a>`;
+      }
+      if (!pagesHtml) {
+        pagesHtml = '<span style="color: var(--text-muted); font-size: 0.72rem;">—</span>';
+      }
+
       tr.innerHTML = `
+        <!-- Rank -->
         <td class="rank-cell">#${escapeHtml(rankNum)}</td>
+
+        <!-- Business Name & Category -->
         <td>
-          <div class="business-name">${escapeHtml(lead.business_name || "Unknown")}</div>
+          <div class="business-col">
+            <div class="business-name">${escapeHtml(lead.business_name || "Unknown")}</div>
+            ${lead.category ? `<span class="category-tag">${escapeHtml(lead.category)}</span>` : ""}
+          </div>
         </td>
+
+        <!-- Rating & Reviews -->
         <td>
-          ${lead.review_rating ? `<span class="rating-tag">★ ${escapeHtml(lead.review_rating)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
+          <div class="rating-col">
+            ${lead.review_rating ? `<span class="rating-tag">★ ${escapeHtml(lead.review_rating)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
+            ${lead.review_count ? `<span class="review-count-tag">${escapeHtml(lead.review_count)} reviews</span>` : ""}
+          </div>
         </td>
-        <td style="font-family: var(--font-mono); font-size: 0.78rem;">
-          ${escapeHtml(lead.phone || "—")}
-        </td>
+
+        <!-- Phone -->
         <td>
-          ${lead.email ? `<span class="email-tag" title="Click to copy">${escapeHtml(lead.email)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
+          ${createExpandableHtml(lead.phone, 25, "phone-tag", true)}
         </td>
+
+        <!-- Address -->
         <td>
-          ${lead.owner_name_candidates ? `<span class="owner-tag">${escapeHtml(lead.owner_name_candidates)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
+          ${createExpandableHtml(lead.address, 45, "")}
         </td>
+
+        <!-- Hours -->
         <td>
-          <div class="address-cell" title="${escapeHtml(lead.address || '')}">${escapeHtml(lead.address || "—")}</div>
+          ${lead.hours_status ? `<span class="hours-tag ${hoursClass}">${escapeHtml(lead.hours_status)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
         </td>
+
+        <!-- Email -->
+        <td>
+          ${createExpandableHtml(lead.email, 25, "email-tag", true)}
+        </td>
+
+        <!-- Doctor / Owner -->
+        <td>
+          ${createExpandableHtml(lead.owner_name_candidates, 35, "owner-tag")}
+        </td>
+
+        <!-- Review Snippet -->
+        <td>
+          ${createExpandableHtml(lead.review_snippet, 35, "snippet-tag")}
+        </td>
+
+        <!-- Pages Found -->
+        <td>
+          <div class="page-chips-group">${pagesHtml}</div>
+        </td>
+
+        <!-- Links -->
         <td style="text-align: right; white-space: nowrap;">
-          ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link" title="Visit Website">Web ↗</a>` : ""}
-          ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" title="Google Maps" style="color: var(--text-muted);">Maps ↗</a>` : ""}
+          ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link" title="Visit Official Website">Website ↗</a><br>` : ""}
+          ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" title="Open Google Maps Directions" style="color: var(--text-muted);">Maps ↗</a>` : ""}
+        </td>
+
+        <!-- Status -->
+        <td style="text-align: center;">
+          <span class="status-badge ${statusClass}">${escapeHtml(statusLabel)}</span>
         </td>
       `;
 
-      // Click on email in row to copy
-      const emailEl = tr.querySelector(".email-tag");
-      if (emailEl) {
-        emailEl.addEventListener("click", () => {
-          navigator.clipboard.writeText(lead.email).then(() => {
-            showToast(`Copied ${lead.email}`);
-          });
+      // Copy phone or email on click
+      tr.querySelectorAll(".phone-tag").forEach((el) => {
+        el.style.cursor = "pointer";
+        el.addEventListener("click", () => {
+          if (lead.phone) {
+            navigator.clipboard.writeText(lead.phone).then(() => showToast(`Copied phone: ${lead.phone}`));
+          }
         });
-      }
+      });
+
+      tr.querySelectorAll(".email-tag").forEach((el) => {
+        el.addEventListener("click", () => {
+          if (lead.email) {
+            navigator.clipboard.writeText(lead.email).then(() => showToast(`Copied email: ${lead.email}`));
+          }
+        });
+      });
+
+      // Expand/Collapse toggle button in cell
+      tr.querySelectorAll(".expand-toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", (evt) => {
+          evt.stopPropagation();
+          const content = btn.previousElementSibling;
+          if (!content) return;
+          const isCollapsed = content.classList.contains("collapsed");
+          if (isCollapsed) {
+            content.classList.remove("collapsed");
+            content.classList.add("expanded");
+            btn.textContent = "Less ▴";
+          } else {
+            content.classList.remove("expanded");
+            content.classList.add("collapsed");
+            btn.textContent = "More ▾";
+          }
+        });
+      });
 
       tableBody.appendChild(tr);
     });
@@ -358,41 +521,81 @@ document.addEventListener("DOMContentLoaded", () => {
 
       card.innerHTML = `
         <div class="card-item-top">
-          <span style="font-family: var(--font-mono); font-size: 0.78rem; font-weight: 600; color: var(--text-muted);">#${escapeHtml(rankNum)}</span>
-          ${lead.review_rating ? `<span class="rating-tag">★ ${escapeHtml(lead.review_rating)}</span>` : ""}
+          <div style="display: flex; align-items: center; gap: 0.4rem;">
+            <span style="font-family: var(--font-mono); font-size: 0.78rem; font-weight: 700; color: var(--accent-primary);">#${escapeHtml(rankNum)}</span>
+            ${lead.category ? `<span class="category-tag">${escapeHtml(lead.category)}</span>` : ""}
+          </div>
+          <div style="text-align: right;">
+            ${lead.review_rating ? `<span class="rating-tag">★ ${escapeHtml(lead.review_rating)}</span>` : ""}
+            ${lead.review_count ? `<span class="review-count-tag" style="margin-left: 0.25rem;">(${escapeHtml(lead.review_count)})</span>` : ""}
+          </div>
         </div>
         <div class="card-item-title">${escapeHtml(lead.business_name || "Unknown")}</div>
         <div class="card-details">
           ${lead.phone ? `
             <div class="card-row">
               <span class="card-row-label">Phone</span>
-              <span style="font-family: var(--font-mono);">${escapeHtml(lead.phone)}</span>
+              <div style="flex: 1;">${createExpandableHtml(lead.phone, 35, "phone-tag", true)}</div>
             </div>` : ""
           }
           ${lead.email ? `
             <div class="card-row">
               <span class="card-row-label">Email</span>
-              <span class="email-tag">${escapeHtml(lead.email)}</span>
+              <div style="flex: 1;">${createExpandableHtml(lead.email, 35, "email-tag", true)}</div>
             </div>` : ""
           }
           ${lead.owner_name_candidates ? `
             <div class="card-row">
               <span class="card-row-label">Doctor</span>
-              <span class="owner-tag">${escapeHtml(lead.owner_name_candidates)}</span>
+              <div style="flex: 1;">${createExpandableHtml(lead.owner_name_candidates, 40, "owner-tag")}</div>
             </div>` : ""
           }
           ${lead.address ? `
             <div class="card-row">
               <span class="card-row-label">Address</span>
-              <span style="color: var(--text-muted); font-size: 0.76rem;">${escapeHtml(lead.address)}</span>
+              <div style="flex: 1;">${createExpandableHtml(lead.address, 50, "")}</div>
+            </div>` : ""
+          }
+          ${lead.hours_status ? `
+            <div class="card-row">
+              <span class="card-row-label">Hours</span>
+              <span style="font-size: 0.74rem; color: var(--text-secondary);">${escapeHtml(lead.hours_status)}</span>
+            </div>` : ""
+          }
+          ${lead.review_snippet ? `
+            <div class="card-row">
+              <span class="card-row-label">Review</span>
+              <div style="flex: 1;">${createExpandableHtml(lead.review_snippet, 40, "snippet-tag")}</div>
             </div>` : ""
           }
         </div>
         <div class="card-footer-links">
-          ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link">Website ↗</a>` : "<span></span>"}
-          ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" style="color: var(--text-muted);">Maps ↗</a>` : ""}
+          <div>
+            ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link">Website ↗</a>` : ""}
+            ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" style="color: var(--text-muted);">Maps ↗</a>` : ""}
+          </div>
+          <span class="status-badge ${lead.status && lead.status.includes('success') ? 'success' : 'places'}">${escapeHtml(lead.status || 'places_only')}</span>
         </div>
       `;
+
+      // Expand toggle in card
+      card.querySelectorAll(".expand-toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", (evt) => {
+          evt.stopPropagation();
+          const content = btn.previousElementSibling;
+          if (!content) return;
+          const isCollapsed = content.classList.contains("collapsed");
+          if (isCollapsed) {
+            content.classList.remove("collapsed");
+            content.classList.add("expanded");
+            btn.textContent = "Less ▴";
+          } else {
+            content.classList.remove("expanded");
+            content.classList.add("collapsed");
+            btn.textContent = "More ▾";
+          }
+        });
+      });
 
       cardsContainer.appendChild(card);
     });
@@ -410,10 +613,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const filtered = currentLeads.filter((l) => {
       return (
         (l.business_name || "").toLowerCase().includes(term) ||
+        (l.category || "").toLowerCase().includes(term) ||
         (l.address || "").toLowerCase().includes(term) ||
         (l.phone || "").toLowerCase().includes(term) ||
         (l.email || "").toLowerCase().includes(term) ||
-        (l.owner_name_candidates || "").toLowerCase().includes(term)
+        (l.owner_name_candidates || "").toLowerCase().includes(term) ||
+        (l.review_snippet || "").toLowerCase().includes(term) ||
+        (l.hours_status || "").toLowerCase().includes(term)
       );
     });
 
@@ -434,7 +640,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     if (emails.length === 0) {
-      showToast("No emails to copy.");
+      showToast("No emails found to copy.");
       return;
     }
 
@@ -445,13 +651,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Download CSV
+  // Download CSV - Exactly matching best_doctor_in_ghansoli_navi_mumbai.csv format
   downloadCsvBtn.addEventListener("click", () => {
     if (currentLeads.length === 0) {
       showToast("No leads available to export.");
       return;
     }
 
+    // Exact 19 columns from best_doctor_in_ghansoli_navi_mumbai.csv
     const fields = [
       "search_rank",
       "business_name",
@@ -460,16 +667,25 @@ document.addEventListener("DOMContentLoaded", () => {
       "review_count",
       "phone",
       "address",
+      "hours_status",
       "website",
       "email",
+      "keyword",
+      "review_snippet",
+      "contact_page",
+      "about_page",
+      "team_page",
       "owner_name_candidates",
       "google_maps_directions",
+      "pages_checked",
+      "status",
     ];
 
     const rows = [fields.join(",")];
     currentLeads.forEach((lead) => {
       const row = fields.map((h) => {
-        const val = (lead[h] || "").toString().replace(/"/g, '""');
+        let val = lead[h] !== undefined && lead[h] !== null ? lead[h].toString() : "";
+        val = val.replace(/"/g, '""');
         return `"${val}"`;
       });
       rows.push(row.join(","));
@@ -485,7 +701,7 @@ document.addEventListener("DOMContentLoaded", () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast("CSV exported successfully");
+    showToast(`CSV exported with ${currentLeads.length} listings`);
   });
 
   function escapeHtml(str) {
@@ -498,3 +714,4 @@ document.addEventListener("DOMContentLoaded", () => {
       .replace(/'/g, "&#039;");
   }
 });
+

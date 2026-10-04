@@ -15,8 +15,8 @@ from api.index import app
 PORT = int(os.getenv("PORT", 5050))
 
 if __name__ == "__main__":
-    print("\n=======================================================")
-    print("  Places Scraper local server running")
-    print(f"  Open in your browser: http://localhost:{PORT}")
-    print("=======================================================\n")
+    print("\n=======================================================", flush=True)
+    print("  Places Scraper local server running", flush=True)
+    print(f"  Open in your browser: http://localhost:{PORT}", flush=True)
+    print("=======================================================\n", flush=True)
     app.run(host="127.0.0.1", port=PORT, debug=False, threaded=True)

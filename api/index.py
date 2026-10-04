@@ -122,8 +122,14 @@ def crawl_site(target_info: dict) -> dict:
     emails = set()
     phones = set()
     if target_info.get("phone"):
-        phones.add(target_info["phone"])
+        for p in str(target_info["phone"]).split(";"):
+            p_clean = p.strip()
+            if p_clean:
+                phones.add(p_clean)
     names = []
+    contact_page = target_info.get("contact_page", "")
+    about_page = target_info.get("about_page", "")
+    team_page = target_info.get("team_page", "")
     pages_checked = 0
 
     while queue and pages_checked < 4:
@@ -149,6 +155,12 @@ def crawl_site(target_info: dict) -> dict:
                 abs_url = urldefrag(urljoin(curr, href))[0]
                 if abs_url not in visited and same_domain(url, abs_url):
                     path = urlparse(abs_url).path.lower()
+                    if not contact_page and any(k in path for k in ["contact", "get-in-touch"]):
+                        contact_page = abs_url
+                    if not about_page and any(k in path for k in ["about", "our-story"]):
+                        about_page = abs_url
+                    if not team_page and any(k in path for k in ["team", "doctor", "specialist", "staff"]):
+                        team_page = abs_url
                     if any(k in path for k in ["contact", "about", "team", "doctor"]):
                         queue.append(abs_url)
         except Exception:
@@ -157,9 +169,13 @@ def crawl_site(target_info: dict) -> dict:
     result["email"] = "; ".join(sorted(emails))
     result["phone"] = "; ".join(sorted(phones))
     result["owner_name_candidates"] = "; ".join(dict.fromkeys(names)[:4])
+    result["contact_page"] = contact_page
+    result["about_page"] = about_page
+    result["team_page"] = team_page
     result["pages_checked"] = pages_checked
     result["status"] = "success" if pages_checked > 0 else "site_unreachable"
     return result
+
 
 
 def search_google_places_api(query: str, max_results: int = 30) -> tuple:
@@ -343,10 +359,14 @@ def find_business_website(name: str, query: str) -> str:
     try:
         clean_name = re.split(r"[-|:·]", name)[0].strip()
         search_term = f"{clean_name} official website"
-        results = list(DDGS().text(search_term, max_results=2))
+        results = list(DDGS().text(search_term, max_results=3))
         for r in results:
             href = r.get("href", "")
-            if href and "google.com" not in href and not any(x in href for x in ["facebook.com", "instagram.com", "youtube.com"]):
+            if href and "google.com" not in href and not any(x in href.lower() for x in [
+                "facebook.com", "instagram.com", "youtube.com", "zomato.com", "swiggy.com",
+                "justdial.com", "indiamart.com", "sulekha.com", "practo.com", "lybrate.com",
+                "wikipedia.org", "twitter.com", "x.com", "linkedin.com"
+            ]):
                 return href
     except Exception:
         pass
@@ -360,40 +380,44 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places", min_ra
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
         import scraper
 
-        fetch_count = min(int(max_results * 1.5) + 3, 40) if (min_rating > 0.0 or max_rating > 0.0) else max_results
+        fetch_count = min(int(max_results * 1.5) + 3, 60) if (min_rating > 0.0 or max_rating > 0.0) else max_results
 
         if mode == "web":
-            print(f"[Local UI] Calling scraper.py (Web Search Engine) for: '{query}' ({fetch_count} entries)...")
+            print(f"[Local UI] Calling scraper.py (Web Search Engine) for: '{query}' ({fetch_count} entries)...", flush=True)
             targets = scraper.search_keyword_leads(query, max_results=fetch_count)
         else:
-            print(f"[Local UI] Calling scraper.py (Playwright Places Engine) for: '{query}' ({fetch_count} places, max_rating={max_rating})...")
+            print(f"[Local UI] Calling scraper.py (Google Places Engine) for: '{query}' ({fetch_count} places, max_rating={max_rating})...", flush=True)
             targets = scraper.search_google_places(
                 query,
                 max_results=fetch_count,
                 min_rating=min_rating,
                 max_rating=max_rating,
             )
-            # Auto-enrich any places missing a website URL
-            for t in targets:
-                if not t.get("website"):
-                    discovered_site = find_business_website(t.get("business_name", ""), query)
-                    if discovered_site:
-                        t["website"] = discovered_site
 
         if not targets:
-            print(f"[Local UI] scraper.py returned 0 results for mode='{mode}', falling back...")
+            print(f"[Local UI] scraper.py returned 0 results for mode='{mode}', falling back...", flush=True)
             return []
 
+        def _enrich_single(t):
+            if not t.get("website"):
+                try:
+                    discovered_web = find_business_website(t.get("business_name", ""), query)
+                    if discovered_web:
+                        t["website"] = discovered_web
+                except Exception:
+                    pass
+            return scraper.scrape_site(t)
+
         enriched = []
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(scraper.scrape_site, t): t for t in targets}
+        with ThreadPoolExecutor(max_workers=6) as executor:
+            futures = {executor.submit(_enrich_single, t): t for t in targets}
             for f in as_completed(futures):
                 try:
                     enriched.append(f.result())
                 except Exception:
                     enriched.append(futures[f])
 
-        # Filter enriched items by rating after crawl
+        # Filter enriched items by rating after crawl if requested
         if min_rating > 0.0 or max_rating > 0.0:
             filtered_enriched = []
             for item in enriched:
@@ -409,14 +433,26 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places", min_ra
                         continue
                     if max_rating > 0.0 and r_val >= max_rating:
                         continue
-                    filtered_enriched.append(item)
+                filtered_enriched.append(item)
             enriched = filtered_enriched
 
         enriched.sort(key=lambda r: scraper.parse_rank_num(r.get("search_rank", "")))
-        return enriched[:max_results]
+        final_leads = enriched[:max_results]
+
+        # Auto-save to CSV on disk matching CLI output format
+        try:
+            output_filename = scraper.sanitize_filename(query)
+            output_filepath = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", output_filename))
+            scraper.sort_and_save_csv(output_filepath, final_leads)
+            print(f"[Local UI] Saved {len(final_leads)} leads to '{output_filename}'", flush=True)
+        except Exception as save_err:
+            print(f"[Local UI] Warning: Could not auto-save CSV to disk: {save_err}", flush=True)
+
+        return final_leads
     except Exception as e:
-        print(f"[Local UI] Error in local scraper.py: {e}")
+        print(f"[Local UI] Error in local scraper.py: {e}", flush=True)
         return []
+
 
 
 def discover_places(query: str, max_results: int = 30, mode: str = "places", min_rating: float = 0.0, max_rating: float = 0.0) -> tuple:
