@@ -327,17 +327,45 @@ def is_local_env():
     return not bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 
 
-def run_local_scraper(query: str, max_results: int) -> list:
+def find_business_website(name: str, query: str) -> str:
+    """Auto-discover official website for a Google Places listing if missing."""
+    if not name:
+        return ""
+    try:
+        clean_name = re.split(r"[-|:·]", name)[0].strip()
+        search_term = f"{clean_name} official website"
+        results = list(DDGS().text(search_term, max_results=2))
+        for r in results:
+            href = r.get("href", "")
+            if href and "google.com" not in href and not any(x in href for x in ["facebook.com", "instagram.com", "youtube.com"]):
+                return href
+    except Exception:
+        pass
+    return ""
+
+
+def run_local_scraper(query: str, max_results: int, mode: str = "places") -> list:
     """Connect UI directly to scraper.py when running locally."""
     try:
         import sys
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
         import scraper
 
-        print(f"[Local UI] Calling scraper.py (Playwright engine) for: '{query}' ({max_results} places)...")
-        targets = scraper.search_google_places(query, max_results=max_results)
+        if mode == "web":
+            print(f"[Local UI] Calling scraper.py (Web Search Engine) for: '{query}' ({max_results} entries)...")
+            targets = scraper.search_keyword_leads(query, max_results=max_results)
+        else:
+            print(f"[Local UI] Calling scraper.py (Playwright Places Engine) for: '{query}' ({max_results} places)...")
+            targets = scraper.search_google_places(query, max_results=max_results)
+            # Auto-enrich any places missing a website URL
+            for t in targets:
+                if not t.get("website"):
+                    discovered_site = find_business_website(t.get("business_name", ""), query)
+                    if discovered_site:
+                        t["website"] = discovered_site
+
         if not targets:
-            print("[Local UI] scraper.py returned 0 results, proceeding to API/web fallback...")
+            print(f"[Local UI] scraper.py returned 0 results for mode='{mode}', falling back...")
             return []
 
         enriched = []
@@ -356,25 +384,29 @@ def run_local_scraper(query: str, max_results: int) -> list:
         return []
 
 
-def discover_places(query: str, max_results: int = 30) -> tuple:
+def discover_places(query: str, max_results: int = 30, mode: str = "places") -> tuple:
     # 1. Local mode: connect UI directly to scraper.py
     if is_local_env():
-        local_leads = run_local_scraper(query, max_results=max_results)
+        local_leads = run_local_scraper(query, max_results=max_results, mode=mode)
         if local_leads:
             return local_leads, {
-                "source": "scraper_py_local",
-                "api_status": "Connected to local scraper.py (Playwright)",
+                "source": f"scraper_py_{mode}",
+                "api_status": f"Connected to local scraper.py ({mode.capitalize()} Mode)",
             }
 
-    # 2. Deployment mode (Vercel): use official Google Places API (New)
-    places, api_status = search_google_places_api(query, max_results=max_results)
+    # 2. Deployment mode (Vercel)
+    if mode == "web":
+        places = search_web_fallback(query, max_results=max_results)
+        api_status = "Web Discovery Active"
+    else:
+        places, api_status = search_google_places_api(query, max_results=max_results)
+        if not places:
+            places = search_web_fallback(query, max_results=max_results)
+
     meta = {
-        "source": "google_places_official" if places else "web_fallback",
+        "source": "google_places_official" if (mode == "places" and "OK" in api_status) else "web_fallback",
         "api_status": api_status,
     }
-
-    if not places:
-        places = search_web_fallback(query, max_results=max_results)
 
     # 3. Parallel crawl websites for direct emails & doctor names
     enriched = []
@@ -417,21 +449,26 @@ def health():
 def scrape_endpoint():
     query = ""
     count = 15
+    mode = "places"
 
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         query = data.get("query", "").strip()
         count = int(data.get("count", 15))
+        mode = data.get("mode", "places").strip().lower()
     else:
         query = request.args.get("q", "").strip() or request.args.get("query", "").strip()
         count = int(request.args.get("n", 15) or request.args.get("count", 15))
+        mode = request.args.get("mode", "places").strip().lower()
 
     count = max(1, min(count, 30))
+    if mode not in ("places", "web"):
+        mode = "places"
 
     if not query:
         return jsonify({"error": "Missing 'query' or 'q' parameter"}), 400
 
-    leads, meta = discover_places(query, max_results=count)
+    leads, meta = discover_places(query, max_results=count, mode=mode)
     return jsonify({
         "query": query,
         "count": len(leads),
