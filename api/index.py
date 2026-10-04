@@ -8,10 +8,14 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import parse_qs, unquote, urldefrag, urljoin, urlparse
 
+from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
 import requests
 from bs4 import BeautifulSoup
 from ddgs import DDGS
+
+# Load environment variables from .env if present locally
+load_dotenv()
 
 # Initialize Flask app (native Vercel Python entrypoint)
 app = Flask(__name__, static_folder="../public")
@@ -158,7 +162,110 @@ def crawl_site(target_info: dict) -> dict:
     return result
 
 
-def discover_places(query: str, max_results: int = 30) -> list:
+def search_google_places_api(query: str, max_results: int = 30) -> tuple:
+    """
+    Search official Google Places API (New) for authentic local business listings.
+    Returns (places_list, status_message).
+    """
+    api_key = os.getenv("GOOGLE_API_KEY", "").strip() or GOOGLE_API_KEY
+    if not api_key:
+        return [], "NO_API_KEY"
+
+    url = "https://places.googleapis.com/v1/places:searchText"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": (
+            "places.displayName,places.formattedAddress,places.rating,"
+            "places.userRatingCount,places.nationalPhoneNumber,places.internationalPhoneNumber,"
+            "places.websiteUri,places.googleMapsUri,places.currentOpeningHours,places.primaryTypeDisplayName,"
+            "nextPageToken"
+        ),
+    }
+
+    discovered = []
+    page_token = None
+
+    while len(discovered) < max_results:
+        fetch_size = min(max_results - len(discovered), 20)
+        body = {
+            "textQuery": query,
+            "pageSize": fetch_size,
+        }
+        if page_token:
+            body["pageToken"] = page_token
+
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=12)
+            if resp.status_code == 403:
+                data = resp.json()
+                msg = data.get("error", {}).get("message", "Permission denied")
+                return [], f"API_KEY_DISABLED: {msg}"
+            if resp.status_code != 200:
+                return [], f"API_HTTP_{resp.status_code}"
+
+            data = resp.json()
+            places = data.get("places", [])
+            if not places:
+                break
+
+            for p in places:
+                name = (p.get("displayName") or {}).get("text", "")
+                if not name:
+                    continue
+
+                rating = p.get("rating", "")
+                rating_str = f"{rating:.1f}" if isinstance(rating, (int, float)) else str(rating or "")
+                reviews = str(p.get("userRatingCount") or "")
+                phone = p.get("nationalPhoneNumber") or p.get("internationalPhoneNumber") or ""
+                address = p.get("formattedAddress") or ""
+                website = p.get("websiteUri") or ""
+                maps_url = p.get("googleMapsUri") or ""
+
+                hours_info = p.get("currentOpeningHours") or {}
+                open_now = hours_info.get("openNow")
+                hours_status = "Open now" if open_now is True else ("Closed" if open_now is False else "Operational")
+
+                type_info = p.get("primaryTypeDisplayName") or {}
+                category = type_info.get("text") or "Healthcare / Business"
+
+                rank_num = len(discovered) + 1
+                discovered.append({
+                    "search_rank": f"#{rank_num}",
+                    "business_name": name,
+                    "category": category,
+                    "review_rating": rating_str,
+                    "review_count": reviews,
+                    "phone": phone,
+                    "address": address,
+                    "hours_status": hours_status,
+                    "website": website,
+                    "keyword": query,
+                    "review_snippet": "",
+                    "google_maps_directions": maps_url,
+                    "contact_page": "",
+                    "about_page": "",
+                    "team_page": "",
+                    "owner_name_candidates": "",
+                    "email": "",
+                    "pages_checked": 0,
+                    "status": "google_places_official",
+                })
+                if len(discovered) >= max_results:
+                    break
+
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+            time.sleep(1.0)
+        except Exception as e:
+            return discovered, f"EXCEPTION: {str(e)}"
+
+    return discovered, "OK"
+
+
+def search_web_fallback(query: str, max_results: int = 30) -> list:
+    """Fallback search using live web discovery when Places API is not active."""
     discovered = []
     seen = set()
 
@@ -180,8 +287,9 @@ def discover_places(query: str, max_results: int = 30) -> list:
                 m_phone = PHONE_CLEAN_REGEX.search(body)
                 phone = m_phone.group(0) if m_phone else ""
 
+                # Extract rating ONLY if genuine in snippet, do not fabricate ratings
                 m_rate = re.search(r"(\b[3-5]\.\d\b)\s*(?:stars?|★)?", body)
-                rating = m_rate.group(1) if m_rate else "4.8"
+                rating = m_rate.group(1) if m_rate else ""
 
                 clean_name = re.split(r"[-|:·]", title)[0].strip() or title
                 rank = len(discovered) + 1
@@ -190,7 +298,7 @@ def discover_places(query: str, max_results: int = 30) -> list:
                     "business_name": clean_name,
                     "category": "Clinic / Healthcare",
                     "review_rating": rating,
-                    "review_count": "100+",
+                    "review_count": "",
                     "phone": phone,
                     "address": body[:90] + "..." if len(body) > 90 else body,
                     "hours_status": "Operational",
@@ -204,16 +312,33 @@ def discover_places(query: str, max_results: int = 30) -> list:
                     "owner_name_candidates": "",
                     "email": "",
                     "pages_checked": 0,
-                    "status": "discovered",
+                    "status": "web_discovery",
                 })
                 if len(discovered) >= max_results:
                     break
         except Exception:
             continue
 
+    return discovered
+
+
+def discover_places(query: str, max_results: int = 30) -> tuple:
+    # 1. Primary: Search Official Google Places API
+    places, api_status = search_google_places_api(query, max_results=max_results)
+
+    meta = {
+        "source": "google_places_official" if places else "web_fallback",
+        "api_status": api_status,
+    }
+
+    # 2. Fallback: If Places API returns no results or is disabled, fallback to web search
+    if not places:
+        places = search_web_fallback(query, max_results=max_results)
+
+    # 3. Parallel crawl websites for direct emails & doctor names
     enriched = []
     with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = {executor.submit(crawl_site, d): d for d in discovered}
+        futures = {executor.submit(crawl_site, d): d for d in places}
         for f in as_completed(futures):
             try:
                 enriched.append(f.result())
@@ -225,7 +350,7 @@ def discover_places(query: str, max_results: int = 30) -> list:
         return int(m.group(0)) if m else 999
 
     enriched.sort(key=parse_rank)
-    return enriched
+    return enriched, meta
 
 
 # Global CORS handler for all responses
@@ -242,7 +367,7 @@ def add_cors_headers(response):
 def health():
     return jsonify({
         "status": "healthy",
-        "google_api_configured": bool(GOOGLE_API_KEY),
+        "google_api_configured": bool(os.getenv("GOOGLE_API_KEY", "") or GOOGLE_API_KEY),
         "timestamp": int(time.time()),
     })
 
@@ -265,10 +390,12 @@ def scrape_endpoint():
     if not query:
         return jsonify({"error": "Missing 'query' or 'q' parameter"}), 400
 
-    leads = discover_places(query, max_results=count)
+    leads, meta = discover_places(query, max_results=count)
     return jsonify({
         "query": query,
         "count": len(leads),
+        "source": meta.get("source"),
+        "api_status": meta.get("api_status"),
         "leads": leads,
     })
 
@@ -284,4 +411,4 @@ def serve_static(path):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=3000, debug=True)
+    app.run(host="0.0.0.0", port=5050, debug=True)
