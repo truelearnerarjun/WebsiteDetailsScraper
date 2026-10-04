@@ -322,16 +322,57 @@ def search_web_fallback(query: str, max_results: int = 30) -> list:
     return discovered
 
 
-def discover_places(query: str, max_results: int = 30) -> tuple:
-    # 1. Primary: Search Official Google Places API
-    places, api_status = search_google_places_api(query, max_results=max_results)
+def is_local_env():
+    """Check if running on local developer machine vs cloud deployment (Vercel)."""
+    return not bool(os.getenv("VERCEL") or os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
 
+
+def run_local_scraper(query: str, max_results: int) -> list:
+    """Connect UI directly to scraper.py when running locally."""
+    try:
+        import sys
+        sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+        import scraper
+
+        print(f"[Local UI] Calling scraper.py (Playwright engine) for: '{query}' ({max_results} places)...")
+        targets = scraper.search_google_places(query, max_results=max_results)
+        if not targets:
+            print("[Local UI] scraper.py returned 0 results, proceeding to API/web fallback...")
+            return []
+
+        enriched = []
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(scraper.scrape_site, t): t for t in targets}
+            for f in as_completed(futures):
+                try:
+                    enriched.append(f.result())
+                except Exception:
+                    enriched.append(futures[f])
+
+        enriched.sort(key=lambda r: scraper.parse_rank_num(r.get("search_rank", "")))
+        return enriched
+    except Exception as e:
+        print(f"[Local UI] Error in local scraper.py: {e}")
+        return []
+
+
+def discover_places(query: str, max_results: int = 30) -> tuple:
+    # 1. Local mode: connect UI directly to scraper.py
+    if is_local_env():
+        local_leads = run_local_scraper(query, max_results=max_results)
+        if local_leads:
+            return local_leads, {
+                "source": "scraper_py_local",
+                "api_status": "Connected to local scraper.py (Playwright)",
+            }
+
+    # 2. Deployment mode (Vercel): use official Google Places API (New)
+    places, api_status = search_google_places_api(query, max_results=max_results)
     meta = {
         "source": "google_places_official" if places else "web_fallback",
         "api_status": api_status,
     }
 
-    # 2. Fallback: If Places API returns no results or is disabled, fallback to web search
     if not places:
         places = search_web_fallback(query, max_results=max_results)
 
