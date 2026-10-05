@@ -158,6 +158,9 @@ def merge_duplicate_leads(leads: list) -> list:
         for field in ("website", "address", "category", "hours_status", "review_rating", "review_count", "review_snippet"):
             if not primary.get(field) and item.get(field):
                 primary[field] = item[field]
+        for field in ("lead_status", "notes", "tags", "owner"):
+            if not primary.get(field) and item.get(field):
+                primary[field] = item[field]
         for key in keys | lead_identity_keys(primary):
             key_to_index[key] = index
 
@@ -216,6 +219,14 @@ def add_lead_intelligence(leads: list) -> list:
         item["data_sources"] = "; ".join(sources)
         item["duplicate_count"] = int(item.get("duplicate_count") or 1)
         item["merged_ranks"] = item.get("merged_ranks") or str(item.get("search_rank", ""))
+
+        # Lead Workspace fields
+        item["lead_status"] = item.get("lead_status") or "New"
+        item["notes"] = item.get("notes") or ""
+        item["tags"] = item.get("tags") or ""
+        item["owner"] = item.get("owner") or ""
+        item["identity_key"] = item.get("identity_key") or supabase_client.generate_identity_key(item)
+
         intelligent_leads.append(item)
 
     return sorted(intelligent_leads, key=parse_rank)
@@ -697,7 +708,8 @@ def health():
 
 @app.route("/api/supabase/status", methods=["GET"])
 def supabase_status():
-    status = supabase_client.test_connection()
+    table = request.args.get("table", "").strip() or None
+    status = supabase_client.test_connection(table=table)
     return jsonify(status)
 
 
@@ -706,7 +718,8 @@ def supabase_save():
     data = request.get_json(silent=True) or {}
     leads = data.get("leads", [])
     query = data.get("query", "").strip()
-    result = supabase_client.upsert_leads(leads, query=query)
+    table = data.get("table", "").strip() or None
+    result = supabase_client.upsert_leads(leads, query=query, table=table)
     status_code = 200 if result.get("success") else 400
     return jsonify(result), status_code
 
@@ -716,10 +729,58 @@ def supabase_leads():
     query = request.args.get("q", "").strip() or request.args.get("query", "").strip()
     limit = int(request.args.get("limit", 100))
     min_score = int(request.args.get("min_score", 0))
-    leads = supabase_client.fetch_saved_leads(query=query, limit=limit, min_score=min_score)
+    lead_status = request.args.get("lead_status", "").strip() or request.args.get("status", "").strip()
+    table = request.args.get("table", "").strip() or None
+    leads = supabase_client.fetch_saved_leads(
+        query=query, limit=limit, min_score=min_score, lead_status=lead_status, table=table
+    )
+    cfg = supabase_client.get_supabase_config(table_override=table)
     return jsonify({
         "count": len(leads),
+        "table": cfg["table"],
+        "env": cfg["env"],
         "leads": leads,
+    })
+
+
+@app.route("/api/leads/update", methods=["POST", "PATCH"])
+def update_lead():
+    """Update workspace fields (lead_status, notes, tags, owner) for a single lead."""
+    data = request.get_json(silent=True) or {}
+    identity_key = data.get("identity_key", "").strip()
+    if not identity_key:
+        return jsonify({"success": False, "error": "Missing identity_key parameter"}), 400
+
+    table = data.get("table", "").strip() or None
+    updates = {}
+    if "lead_status" in data:
+        updates["lead_status"] = str(data["lead_status"]).strip()
+    if "notes" in data:
+        updates["notes"] = str(data["notes"]).strip()
+    if "tags" in data:
+        updates["tags"] = str(data["tags"]).strip()
+    if "owner" in data:
+        updates["owner"] = str(data["owner"]).strip()
+
+    if not updates:
+        return jsonify({"success": False, "error": "No workspace fields provided to update"}), 400
+
+    if supabase_client.is_configured():
+        result = supabase_client.update_lead_workspace(identity_key, updates, table=table)
+        if result.get("success"):
+            return jsonify(result), 200
+        return jsonify({
+            "success": True,
+            "lead": {"identity_key": identity_key, **updates},
+            "supabase_synced": False,
+            "warning": result.get("error"),
+            "table": result.get("table"),
+        }), 200
+
+    return jsonify({
+        "success": True,
+        "lead": {"identity_key": identity_key, **updates},
+        "message": "Lead updated locally (Supabase not configured)",
     })
 
 

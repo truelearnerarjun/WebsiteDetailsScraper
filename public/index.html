@@ -250,32 +250,68 @@
           </div>
         </div>
 
-        <!-- Table View (Default) -->
+        <!-- Lead Workspace Pipeline Filter Bar -->
+        <div class="lead-pipeline-bar" id="lead-pipeline-bar">
+          <div class="pipeline-scroll-wrap">
+            <button type="button" class="pipeline-pill active" data-status="all">
+              <span class="pipeline-dot all"></span>
+              <span class="pipeline-label">All</span>
+              <span class="pipeline-count" id="count-status-all">0</span>
+            </button>
+            <button type="button" class="pipeline-pill" data-status="New">
+              <span class="pipeline-dot new"></span>
+              <span class="pipeline-label">New</span>
+              <span class="pipeline-count" id="count-status-new">0</span>
+            </button>
+            <button type="button" class="pipeline-pill" data-status="Reviewed">
+              <span class="pipeline-dot reviewed"></span>
+              <span class="pipeline-label">Reviewed</span>
+              <span class="pipeline-count" id="count-status-reviewed">0</span>
+            </button>
+            <button type="button" class="pipeline-pill" data-status="Contacted">
+              <span class="pipeline-dot contacted"></span>
+              <span class="pipeline-label">Contacted</span>
+              <span class="pipeline-count" id="count-status-contacted">0</span>
+            </button>
+            <button type="button" class="pipeline-pill" data-status="Qualified">
+              <span class="pipeline-dot qualified"></span>
+              <span class="pipeline-label">Qualified</span>
+              <span class="pipeline-count" id="count-status-qualified">0</span>
+            </button>
+            <button type="button" class="pipeline-pill" data-status="Rejected">
+              <span class="pipeline-dot rejected"></span>
+              <span class="pipeline-label">Rejected</span>
+              <span class="pipeline-count" id="count-status-rejected">0</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Table View -->
         <div id="table-wrapper" class="table-wrapper">
           <table class="data-table">
             <thead>
               <tr>
                 <th style="width: 50px;">Rank</th>
-                <th style="width: 90px;">Lead score</th>
+                <th style="width: 80px;">Score</th>
+                <th style="min-width: 140px;">Workspace Status</th>
                 <th style="min-width: 170px;">Business &amp; Category</th>
                 <th style="width: 110px;">Rating &amp; Reviews</th>
                 <th style="min-width: 130px;">Phone</th>
-                <th style="min-width: 180px;">Address</th>
-                <th style="width: 115px;">Hours</th>
                 <th style="min-width: 140px;">Email</th>
-                <th style="min-width: 160px;">Doctor / Owner</th>
-                <th style="min-width: 160px;">Review Snippet</th>
-                <th style="width: 110px;">Pages Found</th>
+                <th style="min-width: 120px;">Owner</th>
+                <th style="min-width: 160px;">Notes &amp; Tags</th>
+                <th style="min-width: 180px;">Address</th>
+                <th style="width: 110px;">Hours</th>
+                <th style="min-width: 140px;">Doctor / Owner</th>
                 <th style="width: 90px; text-align: right;">Links</th>
-                <th style="min-width: 150px;">Data quality</th>
-                <th style="width: 80px; text-align: center;">Status</th>
+                <th style="width: 90px; text-align: center;">Workspace</th>
               </tr>
             </thead>
             <tbody id="table-body"></tbody>
           </table>
         </div>
 
-        <!-- Cards View (Optional) -->
+        <!-- Cards View (Optimized for Mobile) -->
         <div id="cards-container" class="cards-grid hidden"></div>
       </section>
 
@@ -292,9 +328,94 @@
           </svg>
         </div>
         <p class="empty-title">Ready to extract places</p>
-        <p class="empty-desc">Enter a search keyword above or pick a preset to discover up to 30 ranked local listings with verified contact details.</p>
+        <p class="empty-desc">Enter a search keyword above or pick a preset to discover ranked listings with verified phone, emails, and full mobile lead workspace.</p>
       </section>
     </main>
+
+    <!-- Mobile Fixed Bottom Action Dock (appears when results exist on phones) -->
+    <div id="mobile-dock" class="mobile-dock hidden">
+      <button type="button" id="mobile-dock-csv-btn" class="mobile-dock-btn primary" title="Export CSV with Statuses, Notes & Tags">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        <span>Export CSV</span>
+      </button>
+      <button type="button" id="mobile-dock-sync-btn" class="mobile-dock-btn" title="Sync Leads to Supabase">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        <span id="mobile-dock-sync-text">Save DB</span>
+      </button>
+      <button type="button" id="mobile-dock-view-btn" class="mobile-dock-btn" title="Switch Cards / Table View">
+        <span id="mobile-dock-view-icon">📋</span>
+        <span id="mobile-dock-view-text">Table</span>
+      </button>
+    </div>
+
+    <!-- Lead Workspace Drawer / Modal (Slide-up bottom sheet on mobile, dialog on desktop) -->
+    <div id="lead-workspace-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="workspace-modal-title">
+      <div class="workspace-drawer-card">
+        <div class="drawer-drag-handle"></div>
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <span class="modal-icon">🗂️</span>
+            <div>
+              <h2 id="workspace-modal-title" class="workspace-lead-title">Lead Management</h2>
+              <div id="workspace-lead-subtitle" class="workspace-lead-subtitle">—</div>
+            </div>
+          </div>
+          <button type="button" id="close-workspace-modal-btn" class="modal-close-btn" aria-label="Close dialog">✕</button>
+        </div>
+
+        <div class="modal-body workspace-modal-body">
+          <!-- Quick Direct Action Contacts -->
+          <div id="workspace-quick-actions" class="workspace-quick-actions"></div>
+
+          <!-- Status Selector -->
+          <div class="workspace-field-group">
+            <label class="workspace-label">Lead Pipeline Status</label>
+            <div class="workspace-status-selector" id="workspace-status-selector">
+              <button type="button" class="status-select-btn" data-status="New">New</button>
+              <button type="button" class="status-select-btn" data-status="Reviewed">Reviewed</button>
+              <button type="button" class="status-select-btn" data-status="Contacted">Contacted</button>
+              <button type="button" class="status-select-btn" data-status="Qualified">Qualified</button>
+              <button type="button" class="status-select-btn" data-status="Rejected">Rejected</button>
+            </div>
+          </div>
+
+          <!-- Owner & Tags Row -->
+          <div class="workspace-grid-2">
+            <div class="workspace-field-group">
+              <label for="workspace-owner-input" class="workspace-label">Owner / Assignee</label>
+              <input type="text" id="workspace-owner-input" class="workspace-text-input" placeholder="e.g. Arjun, Sales Rep" />
+            </div>
+            <div class="workspace-field-group">
+              <label for="workspace-tags-input" class="workspace-label">Tags (comma-separated)</label>
+              <input type="text" id="workspace-tags-input" class="workspace-text-input" placeholder="e.g. Hot, Follow-up, VIP" />
+            </div>
+          </div>
+
+          <!-- Quick Tag Suggestions -->
+          <div class="quick-tags-wrap">
+            <span class="quick-tags-label">Quick Tags:</span>
+            <button type="button" class="quick-tag-chip" data-tag="Hot Lead">🔥 Hot Lead</button>
+            <button type="button" class="quick-tag-chip" data-tag="Follow-up">📞 Follow-up</button>
+            <button type="button" class="quick-tag-chip" data-tag="VIP">⭐ VIP</button>
+            <button type="button" class="quick-tag-chip" data-tag="In Discussion">💬 In Discussion</button>
+            <button type="button" class="quick-tag-chip" data-tag="Not Interested">❌ Not Interested</button>
+          </div>
+
+          <!-- Notes Area -->
+          <div class="workspace-field-group">
+            <label for="workspace-notes-input" class="workspace-label">Notes &amp; Interaction Log</label>
+            <textarea id="workspace-notes-input" class="workspace-textarea" rows="4" placeholder="Add conversation details, call summaries, quotation notes..."></textarea>
+          </div>
+
+          <div class="workspace-drawer-footer">
+            <span id="workspace-save-status" class="workspace-save-status"></span>
+            <button type="button" id="workspace-save-btn" class="primary-btn">
+              <span>Save Lead Details</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Supabase Connection & Setup Modal -->
     <div id="supabase-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="supabase-modal-title">
@@ -302,7 +423,7 @@
         <div class="modal-header">
           <div class="modal-header-title">
             <span class="modal-icon">⚡</span>
-            <h2 id="supabase-modal-title">Supabase Integration</h2>
+            <h2 id="supabase-modal-title">Supabase Database</h2>
           </div>
           <button type="button" id="close-supabase-modal-btn" class="modal-close-btn" aria-label="Close dialog">✕</button>
         </div>
@@ -314,6 +435,15 @@
             <span id="supabase-modal-banner-text">Checking Supabase connection...</span>
           </div>
 
+          <!-- Environment & Table Selector -->
+          <div class="modal-env-picker">
+            <span class="info-label">Active Table:</span>
+            <div class="pill-group" id="supabase-table-picker">
+              <button type="button" class="pill-btn active" data-table="leads_local">Local (leads_local)</button>
+              <button type="button" class="pill-btn" data-table="leads">Production (leads)</button>
+            </div>
+          </div>
+
           <!-- Connected Info Box -->
           <div id="supabase-connected-info" class="modal-info-box hidden">
             <div class="info-row">
@@ -321,8 +451,12 @@
               <span class="info-val mono" id="supabase-info-url">—</span>
             </div>
             <div class="info-row">
-              <span class="info-label">Table:</span>
-              <span class="info-val mono" id="supabase-info-table">leads</span>
+              <span class="info-label">Current Table:</span>
+              <span class="info-val mono" id="supabase-info-table">leads_local</span>
+            </div>
+            <div class="info-row">
+              <span class="info-label">Environment:</span>
+              <span class="info-val" id="supabase-info-env">local</span>
             </div>
             <div class="info-row">
               <span class="info-label">Total Leads Saved:</span>
@@ -330,7 +464,7 @@
             </div>
             <div class="modal-actions-inline">
               <button type="button" id="modal-test-btn" class="secondary-btn">↻ Test Connection</button>
-              <button type="button" id="modal-load-leads-btn" class="primary-action-btn">Load Leads into Table</button>
+              <button type="button" id="modal-load-leads-btn" class="primary-action-btn">Load Leads into View</button>
             </div>
           </div>
 
@@ -345,7 +479,7 @@
                 <div class="code-preview-wrap">
                   <pre><code id="env-sample-code">SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_KEY=your-anon-or-service-role-key
-SUPABASE_TABLE=leads
+SUPABASE_TABLE=leads_local
 SUPABASE_AUTO_SYNC=true</code></pre>
                   <button type="button" id="copy-env-btn" class="copy-snippet-btn">Copy .env</button>
                 </div>
@@ -357,7 +491,7 @@ SUPABASE_AUTO_SYNC=true</code></pre>
               <div class="step-num">2</div>
               <div class="step-content">
                 <strong>Run the SQL schema in Supabase SQL Editor:</strong>
-                <p class="step-desc">Creates the <code class="mono">leads</code> table with contactability scores, deduplication indexes, and RLS policies.</p>
+                <p class="step-desc">Creates both <code class="mono">leads_local</code> (dev) and <code class="mono">leads</code> (prod) with workspace statuses, notes, tags, and owner.</p>
                 <div class="step-buttons">
                   <button type="button" id="copy-sql-btn" class="secondary-btn">📋 Copy SQL Schema</button>
                   <a href="https://supabase.com/dashboard" target="_blank" rel="noopener" class="secondary-btn external-link">Open Supabase Dashboard ↗</a>

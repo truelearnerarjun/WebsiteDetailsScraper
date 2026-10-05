@@ -160,6 +160,11 @@ FIELDS = [
     "data_sources",
     "duplicate_count",
     "merged_ranks",
+    "lead_status",
+    "notes",
+    "tags",
+    "owner",
+    "identity_key",
 ]
 
 PHONE_CLEAN_REGEX = re.compile(r"(?:\+?91[\s.-]?)?0?\d{2,5}[\s.-]?\d{5,8}\b")
@@ -1547,7 +1552,7 @@ def sort_and_save_csv(filename: str, results: list):
     sorted_results = sorted(intelligent_results, key=lambda r: parse_rank_num(r.get("search_rank", "")))
     with csv_lock:
         with open(filename, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=FIELDS)
+            writer = csv.DictWriter(f, fieldnames=FIELDS, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(sorted_results)
     return filename
