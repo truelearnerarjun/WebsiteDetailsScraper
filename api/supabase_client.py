@@ -14,7 +14,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def get_supabase_config(table_override: str = None) -> dict:
+def get_supabase_config(table_override: str | None = None) -> dict:
     """
     Return configured Supabase settings from environment.
     Automatically separates environments:
@@ -188,7 +188,7 @@ def format_lead_for_supabase(lead: dict, query: str = "") -> dict:
     }
 
 
-def test_connection(table: str = None) -> dict:
+def test_connection(table: str | None = None) -> dict:
     """Test live connectivity to the configured Supabase instance."""
     cfg = get_supabase_config(table_override=table)
     if not cfg["url"] or not cfg["key"]:
@@ -271,7 +271,7 @@ def test_connection(table: str = None) -> dict:
         }
 
 
-def upsert_leads(leads: list, query: str = "", table: str = None) -> dict:
+def upsert_leads(leads: list, query: str = "", table: str | None = None) -> dict:
     """
     Upsert a batch of leads into Supabase using PostgreSQL ON CONFLICT (identity_key).
     Safe against duplicates: updates existing leads and inserts new ones.
@@ -350,7 +350,7 @@ def upsert_leads(leads: list, query: str = "", table: str = None) -> dict:
     }
 
 
-def update_lead_workspace(identity_key: str, updates: dict, table: str = None) -> dict:
+def update_lead_workspace(identity_key: str, updates: dict, table: str | None = None) -> dict:
     """
     Update workspace fields (lead_status, notes, tags, owner) for a single lead by identity_key.
     Compatible with Supabase REST PATCH endpoint.
@@ -398,7 +398,7 @@ def update_lead_workspace(identity_key: str, updates: dict, table: str = None) -
         return {"success": False, "error": f"Network error updating lead: {str(exc)}"}
 
 
-def fetch_saved_leads(query: str = "", limit: int = 100, min_score: int = 0, lead_status: str = "", table: str = None) -> list:
+def fetch_saved_leads(query: str = "", limit: int = 100, min_score: int = 0, lead_status: str = "", table: str | None = None) -> list:
     """Fetch stored leads from Supabase with optional search query, score filter, and lead_status."""
     cfg = get_supabase_config(table_override=table)
     if not cfg["url"] or not cfg["key"]:

@@ -545,11 +545,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Helper to create expandable cell content
   function createExpandableHtml(text, charThreshold = 55, extraClass = "", copyable = false) {
-    if (!text || text.trim() === "") {
+    if (text === null || text === undefined || String(text).trim() === "") {
       return '<span style="color: var(--text-muted);">—</span>';
     }
 
-    const clean = text.trim();
+    const clean = String(text).trim();
     const isLong = clean.length > charThreshold || clean.includes(";") || clean.includes("\n");
     const escaped = escapeHtml(clean);
     const initialClass = isGlobalExpanded ? "expanded" : (isLong ? "collapsed" : "expanded");
@@ -1140,8 +1140,8 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 
   function escapeHtml(str) {
-    if (!str) return "";
-    return str
+    if (str === null || str === undefined) return "";
+    return String(str)
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")

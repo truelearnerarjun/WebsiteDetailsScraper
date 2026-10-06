@@ -28,7 +28,7 @@ except ImportError:
 # Fix Windows console encoding for international characters and phone symbols
 if hasattr(sys.stdout, "reconfigure"):
     try:
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        getattr(sys.stdout, "reconfigure")(encoding="utf-8", errors="replace")
     except Exception:
         pass
 
@@ -181,7 +181,7 @@ def clean_netloc(netloc: str) -> str:
     return netloc
 
 
-def normalize_url(url: str) -> str:
+def normalize_url(url: str) -> str | None:
     """Normalize input URL, ensuring valid scheme and preserving valid path."""
     url = url.strip()
     if not url:
@@ -285,7 +285,7 @@ def extract_emails(soup: BeautifulSoup) -> set:
 
     # 1. mailto links
     for tag in soup.select('a[href^="mailto:"]'):
-        href = tag.get("href", "")
+        href = str(tag.get("href") or "")
         raw = href.replace("mailto:", "", 1).split("?")[0].strip()
         raw = unquote(raw)
         if is_valid_email(raw):
@@ -325,7 +325,7 @@ def extract_phones(soup: BeautifulSoup) -> set:
 
     # 1. tel: links (most reliable source on modern websites)
     for tag in soup.select('a[href^="tel:"]'):
-        href = tag.get("href", "")
+        href = str(tag.get("href") or "")
         cleaned = clean_phone(href)
         if is_valid_phone(cleaned):
             phones.add(cleaned)
@@ -373,13 +373,15 @@ def extract_reviews(soup: BeautifulSoup) -> tuple:
 
     # 2. Check Microdata itemprop tags
     if not rating:
-        rv_tag = soup.find(attrs={"itemprop": "ratingValue"})
+        rv_tag = soup.select_one('[itemprop="ratingValue"]')
         if rv_tag:
-            rating = (rv_tag.get("content") or rv_tag.get_text(strip=True)).strip()
+            c = rv_tag.get("content")
+            rating = str(c).strip() if c is not None else rv_tag.get_text(strip=True)
     if not review_count:
-        rc_tag = soup.find(attrs={"itemprop": lambda x: x in ("reviewCount", "ratingCount")})
+        rc_tag = soup.select_one('[itemprop="reviewCount"], [itemprop="ratingCount"]')
         if rc_tag:
-            review_count = (rc_tag.get("content") or rc_tag.get_text(strip=True)).strip()
+            c = rc_tag.get("content")
+            review_count = str(c).strip() if c is not None else rc_tag.get_text(strip=True)
 
     if rating and review_count:
         return rating, review_count
@@ -443,7 +445,7 @@ def find_candidate_pages(base_url: str, soup: BeautifulSoup) -> dict:
     }
 
     for link in soup.find_all("a", href=True):
-        href = link["href"].strip()
+        href = str(link.get("href") or "").strip()
         if not href or href.startswith(("#", "mailto:", "tel:", "javascript:", "data:")):
             continue
 
@@ -1277,7 +1279,7 @@ def scrape_site(target_info: dict) -> dict:
         if not business_name:
             og_site = soup.find("meta", property="og:site_name")
             if og_site and og_site.get("content"):
-                business_name = og_site["content"].strip()
+                business_name = str(og_site.get("content") or "").strip()
             elif soup.title and soup.title.get_text(strip=True):
                 business_name = soup.title.get_text(" ", strip=True)
 
@@ -1785,7 +1787,12 @@ def main():
         if supabase_client.is_configured():
             cfg = supabase_client.get_supabase_config()
             if cfg["auto_sync"]:
-                sync_res = supabase_client.upsert_leads(all_results, query=keyword or DEFAULT_SEARCH_KEYWORD)
+                effective_query = (
+                    search_query
+                    if "search_query" in locals() and search_query
+                    else DEFAULT_SEARCH_KEYWORD
+                )
+                sync_res = supabase_client.upsert_leads(all_results, query=effective_query)
                 if sync_res.get("success"):
                     print(f"[+] Synced {sync_res.get('count')} leads to Supabase table '{cfg['table']}'.")
     except Exception:

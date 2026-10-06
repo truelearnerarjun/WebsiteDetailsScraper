@@ -248,8 +248,9 @@ def same_domain(base: str, url: str) -> bool:
 def extract_emails(soup: BeautifulSoup) -> set:
     found = set()
     for a in soup.find_all("a", href=True):
-        if a["href"].startswith("mailto:"):
-            addr = a["href"][7:].split("?")[0].strip().lower()
+        href = str(a.get("href") or "")
+        if href.startswith("mailto:"):
+            addr = href[7:].split("?")[0].strip().lower()
             if addr and "@" in addr:
                 found.add(addr)
     for text in soup.stripped_strings:
@@ -265,8 +266,9 @@ def extract_emails(soup: BeautifulSoup) -> set:
 def extract_phones(soup: BeautifulSoup) -> set:
     found = set()
     for a in soup.find_all("a", href=True):
-        if a["href"].startswith("tel:"):
-            tel = a["href"][4:].strip()
+        href = str(a.get("href") or "")
+        if href.startswith("tel:"):
+            tel = href[4:].strip()
             digits = re.sub(r"\D", "", tel)
             if 7 <= len(digits) <= 15:
                 found.add(tel)
@@ -325,7 +327,7 @@ def crawl_site(target_info: dict) -> dict:
             names.extend(extract_name_candidates(soup))
 
             for a in soup.find_all("a", href=True):
-                href = a["href"].strip()
+                href = str(a.get("href") or "").strip()
                 if not href or href.startswith(("#", "mailto:", "tel:", "javascript:")):
                     continue
                 abs_url = urldefrag(urljoin(curr, href))[0]
@@ -344,7 +346,7 @@ def crawl_site(target_info: dict) -> dict:
 
     result["email"] = "; ".join(sorted(emails))
     result["phone"] = "; ".join(sorted(phones))
-    result["owner_name_candidates"] = "; ".join(dict.fromkeys(names)[:4])
+    result["owner_name_candidates"] = "; ".join(list(dict.fromkeys(names))[:4])
     result["contact_page"] = contact_page
     result["about_page"] = about_page
     result["team_page"] = team_page
