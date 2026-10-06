@@ -558,7 +558,7 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places", min_ra
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
         import scraper
 
-        fetch_count = min(int(max_results * 1.5) + 3, 60) if (min_rating > 0.0 or max_rating > 0.0) else max_results
+        fetch_count = min(int(max_results * 1.5) + 5, 200) if (min_rating > 0.0 or max_rating > 0.0) else max_results
 
         if mode == "web":
             print(f"[Local UI] Calling scraper.py (Web Search Engine) for: '{query}' ({fetch_count} entries)...", flush=True)

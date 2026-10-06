@@ -784,8 +784,9 @@ def search_google_places(
                         page.wait_for_timeout(2500)
 
                     scroll_attempts = 0
-                    max_scrolls = max(14, (max_results // 2) + 8)
-                    last_feed_count = 0
+                    max_scrolls = max(20, (max_results // 2) + 15)
+                    last_cards_count = 0
+                    last_intercepted_count = 0
                     stuck_count = 0
 
                     while len(discovered) < max_results and scroll_attempts < max_scrolls:
@@ -1002,20 +1003,48 @@ def search_google_places(
                         if len(discovered) >= max_results:
                             break
 
-                        # Scroll feed down to load more cards
+                        # Scroll feed down using DOM scrollIntoView and real mouse wheel events
                         page.evaluate("""() => {
                             const feed = document.querySelector('div[role="feed"]');
-                            if (feed) feed.scrollTop = feed.scrollHeight;
+                            if (feed) {
+                                feed.scrollTop = feed.scrollHeight;
+                                const cards = feed.querySelectorAll('div.Nv2PK');
+                                if (cards.length > 0) {
+                                    cards[cards.length - 1].scrollIntoView({ behavior: 'smooth', block: 'end' });
+                                }
+                            }
                         }""")
+
+                        # Dispatch real mouse wheel gesture on Google Maps feed container to trigger pagination past 60 items
+                        feed_elem = page.query_selector('div[role="feed"]')
+                        if feed_elem:
+                            box = feed_elem.bounding_box()
+                            if box:
+                                page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] - 50)
+                                page.mouse.wheel(0, 4500)
+
                         page.wait_for_timeout(1800)
 
-                        if len(cards_data) == last_feed_count and len(intercepted_data) == last_feed_count:
+                        # Detect if Google Maps reached the end of all results
+                        has_reached_end = page.evaluate("""() => {
+                            const el = Array.from(document.querySelectorAll('span, p, div')).find(e => e.innerText && e.innerText.includes("reached the end"));
+                            return Boolean(el);
+                        }""")
+                        if has_reached_end and len(discovered) >= max_results:
+                            break
+
+                        if len(cards_data) == last_cards_count and len(intercepted_data) == last_intercepted_count:
                             stuck_count += 1
-                            if stuck_count >= 4:
+                            if has_reached_end and stuck_count >= 2:
+                                print(f"[Places] Reached end of Google Maps results ({len(discovered)} places).", flush=True)
+                                break
+                            if stuck_count >= 6:
                                 break
                         else:
                             stuck_count = 0
-                        last_feed_count = max(len(cards_data), len(intercepted_data))
+
+                        last_cards_count = len(cards_data)
+                        last_intercepted_count = len(intercepted_data)
 
                     # Supplement from intercepted network stream if DOM had fewer cards than requested
                     if len(discovered) < max_results:
