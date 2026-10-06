@@ -97,7 +97,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let selectedStatusFilter = "all";
   let activeWorkspaceLead = null;
   let activeModalStatus = "New";
-  let currentSupabaseTable = "leads_local";
+  let currentSupabaseTable = ""; // dynamically resolved from /api/supabase/status ('leads' on Vercel, 'leads_local' locally)
 
   // Detect if opened via file:// protocol directly
   if (window.location.protocol === "file:") {
@@ -1155,9 +1155,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
   async function checkSupabaseStatus(showToastFeedback = false, tableOverride = null) {
     if (!supabaseStatusBtn) return;
-    const targetTable = tableOverride || currentSupabaseTable;
+    const url = tableOverride
+      ? `/api/supabase/status?table=${encodeURIComponent(tableOverride)}`
+      : `/api/supabase/status`;
     try {
-      const res = await fetch(`/api/supabase/status?table=${encodeURIComponent(targetTable)}`);
+      const res = await fetch(url);
       const data = await res.json();
 
       if (data.table) {
@@ -1235,7 +1237,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function openSupabaseModal() {
     if (supabaseModal) {
       supabaseModal.classList.remove("hidden");
-      checkSupabaseStatus(false, currentSupabaseTable);
+      checkSupabaseStatus(false, currentSupabaseTable || null);
     }
   }
 
@@ -1247,8 +1249,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (supabaseStatusBtn) supabaseStatusBtn.addEventListener("click", openSupabaseModal);
   if (closeSupabaseModalBtn) closeSupabaseModalBtn.addEventListener("click", closeSupabaseModal);
-  if (modalTestBtn) modalTestBtn.addEventListener("click", () => checkSupabaseStatus(true, currentSupabaseTable));
-  if (modalRecheckBtn) modalRecheckBtn.addEventListener("click", () => checkSupabaseStatus(true, currentSupabaseTable));
+  if (modalTestBtn) modalTestBtn.addEventListener("click", () => checkSupabaseStatus(true, currentSupabaseTable || null));
+  if (modalRecheckBtn) modalRecheckBtn.addEventListener("click", () => checkSupabaseStatus(true, currentSupabaseTable || null));
 
   if (supabaseModal) {
     supabaseModal.addEventListener("click", (e) => {
@@ -1361,6 +1363,6 @@ document.addEventListener("DOMContentLoaded", () => {
   if (loadSupabaseBtn) loadSupabaseBtn.addEventListener("click", loadLeadsFromSupabase);
   if (modalLoadLeadsBtn) modalLoadLeadsBtn.addEventListener("click", loadLeadsFromSupabase);
 
-  // Initialize Supabase status on page load
-  checkSupabaseStatus(false, currentSupabaseTable);
+  // Initialize Supabase status on page load (auto-queries environment table: 'leads' on Vercel, 'leads_local' locally)
+  checkSupabaseStatus(false, null);
 });

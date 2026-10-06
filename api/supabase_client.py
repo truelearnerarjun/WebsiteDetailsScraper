@@ -30,18 +30,30 @@ def get_supabase_config(table_override: str = None) -> dict:
         or ""
     ).strip()
 
-    is_vercel = os.getenv("VERCEL") == "1"
+    is_vercel = (
+        os.getenv("VERCEL") == "1"
+        or bool(os.getenv("VERCEL_ENV"))
+        or bool(os.getenv("VERCEL_URL"))
+        or bool(os.getenv("VERCEL_REGION"))
+    )
     env = (os.getenv("APP_ENV") or ("production" if is_vercel else "local")).strip().lower()
-    is_local = (env in ("local", "dev", "development") or not is_vercel)
+    is_local = (env in ("local", "dev", "development") and not is_vercel)
 
     if table_override and table_override.strip():
         table = table_override.strip()
     else:
         configured = (os.getenv("SUPABASE_TABLE") or "").strip()
-        if configured:
-            table = configured
+        if is_vercel:
+            # On Vercel (Production), strictly default to 'leads'.
+            # Even if local .env with SUPABASE_TABLE=leads_local was copied into Vercel settings,
+            # protect production by using 'leads' unless a custom production table is specified.
+            if configured and configured.lower() not in ("leads_local", "leads_dev"):
+                table = configured
+            else:
+                table = "leads"
         else:
-            table = "leads_local" if is_local else "leads"
+            # Local development environment defaults to 'leads_local'
+            table = configured if configured else "leads_local"
 
     auto_sync = os.getenv("SUPABASE_AUTO_SYNC", "").strip().lower() in (
         "true", "1", "yes", "on"
@@ -50,7 +62,7 @@ def get_supabase_config(table_override: str = None) -> dict:
         "url": url,
         "key": key,
         "table": table,
-        "env": env,
+        "env": "production" if is_vercel else "local",
         "is_local": is_local,
         "auto_sync": auto_sync,
     }
