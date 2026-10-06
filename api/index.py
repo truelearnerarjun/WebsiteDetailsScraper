@@ -584,7 +584,17 @@ def run_local_scraper(query: str, max_results: int, mode: str = "places", min_ra
                         t["website"] = discovered_web
                 except Exception:
                     pass
-            return scraper.scrape_site(t)
+            item = scraper.scrape_site(t)
+            if not item.get("linkedin"):
+                try:
+                    bname = item.get("business_name") or t.get("business_name", "")
+                    loc = item.get("address") or query
+                    li = scraper.find_business_linkedin(bname, loc)
+                    if li:
+                        item["linkedin"] = li
+                except Exception:
+                    pass
+            return item
 
         enriched = []
         with ThreadPoolExecutor(max_workers=6) as executor:
@@ -729,25 +739,40 @@ def supabase_save():
 @app.route("/api/supabase/leads", methods=["GET"])
 def supabase_leads():
     query = request.args.get("q", "").strip() or request.args.get("query", "").strip()
-    limit = int(request.args.get("limit", 100))
+    keyword = request.args.get("keyword", "").strip()
+    limit = int(request.args.get("limit", 500))
     min_score = int(request.args.get("min_score", 0))
     lead_status = request.args.get("lead_status", "").strip() or request.args.get("status", "").strip()
     table = request.args.get("table", "").strip() or None
     leads = supabase_client.fetch_saved_leads(
-        query=query, limit=limit, min_score=min_score, lead_status=lead_status, table=table
+        query=query, keyword=keyword, limit=limit, min_score=min_score, lead_status=lead_status, table=table
     )
     cfg = supabase_client.get_supabase_config(table_override=table)
     return jsonify({
         "count": len(leads),
         "table": cfg["table"],
         "env": cfg["env"],
+        "keyword": keyword,
         "leads": leads,
+    })
+
+
+@app.route("/api/supabase/searches", methods=["GET"])
+def supabase_searches():
+    """Return distinct saved search tables from Supabase to view separately without collision."""
+    table = request.args.get("table", "").strip() or None
+    searches = supabase_client.get_saved_searches(table=table)
+    cfg = supabase_client.get_supabase_config(table_override=table)
+    return jsonify({
+        "success": True,
+        "table": cfg["table"],
+        "searches": searches,
     })
 
 
 @app.route("/api/leads/update", methods=["POST", "PATCH"])
 def update_lead():
-    """Update workspace fields (lead_status, notes, tags, owner) for a single lead."""
+    """Update workspace fields (lead_status, notes, tags, owner, linkedin) for a single lead."""
     data = request.get_json(silent=True) or {}
     identity_key = data.get("identity_key", "").strip()
     if not identity_key:
@@ -763,6 +788,8 @@ def update_lead():
         updates["tags"] = str(data["tags"]).strip()
     if "owner" in data:
         updates["owner"] = str(data["owner"]).strip()
+    if "linkedin" in data:
+        updates["linkedin"] = str(data["linkedin"]).strip()
 
     if not updates:
         return jsonify({"success": False, "error": "No workspace fields provided to update"}), 400

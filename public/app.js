@@ -84,6 +84,22 @@ document.addEventListener("DOMContentLoaded", () => {
   const workspaceSaveBtn = document.getElementById("workspace-save-btn");
   const workspaceSaveStatus = document.getElementById("workspace-save-status");
   const quickTagChips = document.querySelectorAll(".quick-tag-chip");
+  const workspaceLinkedinInput = document.getElementById("workspace-linkedin-input");
+  const workspaceLinkedinLink = document.getElementById("workspace-linkedin-link");
+
+  // Selection & Active Filter Banner Elements
+  const downloadCsvText = document.getElementById("download-csv-text");
+  const selectAllLeadsCb = document.getElementById("select-all-leads-cb");
+  const activeFilterBanner = document.getElementById("active-filter-banner");
+  const filterBannerMsg = document.getElementById("filter-banner-msg");
+  const resetFilterBtn = document.getElementById("reset-filter-btn");
+
+  // Saved Search Tables Picker Elements
+  const savedTablesBtn = document.getElementById("saved-tables-btn");
+  const savedTablesMenu = document.getElementById("saved-tables-menu");
+  const savedTablesList = document.getElementById("saved-tables-list");
+  const savedTablesCount = document.getElementById("saved-tables-count");
+  const activeTableBadge = document.getElementById("active-table-badge");
 
   // Supabase env & table elements
   const supabaseInfoEnv = document.getElementById("supabase-info-env");
@@ -98,6 +114,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let activeWorkspaceLead = null;
   let activeModalStatus = "New";
   let currentSupabaseTable = ""; // dynamically resolved from /api/supabase/status ('leads' on Vercel, 'leads_local' locally)
+  let selectedLeadKeys = new Set();
+  let savedSearchesList = [];
 
   // Detect if opened via file:// protocol directly
   if (window.location.protocol === "file:") {
@@ -440,10 +458,12 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // Live workspace field updater (syncs locally and to Supabase)
-  async function updateLeadWorkspaceField(lead, updates) {
+  async function updateLeadWorkspaceField(lead, updates, skipReRender = false) {
     Object.assign(lead, updates);
     updatePipelineCounters();
-    renderLeadView();
+    if (!skipReRender) {
+      renderLeadView();
+    }
 
     try {
       const payload = {
@@ -537,10 +557,90 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
+  function getSelectedLeads() {
+    if (selectedLeadKeys.size === 0) return [];
+    return currentLeads.filter((l) => selectedLeadKeys.has(l.identity_key));
+  }
+
+  function getSelectedOrFilteredLeads() {
+    if (selectedLeadKeys.size > 0) {
+      return getSelectedLeads();
+    }
+    return getDisplayedLeads();
+  }
+
+  function updateSelectionAndFilterUI() {
+    const displayed = getDisplayedLeads();
+    const selCount = selectedLeadKeys.size;
+    const isFiltered = displayed.length !== currentLeads.length;
+
+    // 1. Update active filter / selection banner
+    if (activeFilterBanner) {
+      if (selCount > 0) {
+        activeFilterBanner.classList.remove("hidden");
+        if (filterBannerMsg) filterBannerMsg.textContent = `🎯 ${selCount} lead(s) selected manually. Only these will be saved or exported.`;
+      } else if (selectedStatusFilter !== "all") {
+        activeFilterBanner.classList.remove("hidden");
+        if (filterBannerMsg) filterBannerMsg.textContent = `🎯 Filter active: '${selectedStatusFilter}' (${displayed.length} of ${currentLeads.length} leads). Only these ${displayed.length} will be saved or exported.`;
+      } else if (filterResultsInput && filterResultsInput.value.trim()) {
+        activeFilterBanner.classList.remove("hidden");
+        if (filterBannerMsg) filterBannerMsg.textContent = `🎯 Filter active: "${filterResultsInput.value.trim()}" (${displayed.length} of ${currentLeads.length} leads). Only these ${displayed.length} will be saved or exported.`;
+      } else if (leadQualityFilter && leadQualityFilter.value !== "all") {
+        activeFilterBanner.classList.remove("hidden");
+        if (filterBannerMsg) filterBannerMsg.textContent = `🎯 Filter active: Quality '${leadQualityFilter.value}' (${displayed.length} of ${currentLeads.length} leads). Only these ${displayed.length} will be saved or exported.`;
+      } else {
+        activeFilterBanner.classList.add("hidden");
+      }
+    }
+
+    // 2. Update Save to Supabase button label
+    if (saveSupabaseText) {
+      if (selCount > 0) {
+        saveSupabaseText.textContent = `Save Selected (${selCount}) to DB`;
+      } else if (isFiltered) {
+        saveSupabaseText.textContent = `Save Filtered (${displayed.length}) to DB`;
+      } else {
+        saveSupabaseText.textContent = "Save to Supabase";
+      }
+    }
+    if (mobileDockSyncText) {
+      if (selCount > 0) {
+        mobileDockSyncText.textContent = `Save (${selCount})`;
+      } else if (isFiltered) {
+        mobileDockSyncText.textContent = `Save (${displayed.length})`;
+      } else {
+        mobileDockSyncText.textContent = "Save DB";
+      }
+    }
+
+    // 3. Update Export CSV button label
+    if (downloadCsvText) {
+      if (selCount > 0) {
+        downloadCsvText.textContent = `Export Selected (${selCount})`;
+      } else if (isFiltered) {
+        downloadCsvText.textContent = `Export CSV (${displayed.length})`;
+      } else {
+        downloadCsvText.textContent = "Export CSV";
+      }
+    }
+
+    // 4. Update Header statistics total places counter
+    if (statTotalLeads) {
+      statTotalLeads.textContent = isFiltered ? `${displayed.length} of ${currentLeads.length}` : `${currentLeads.length}`;
+    }
+
+    // 5. Update Select All checkbox in header
+    if (selectAllLeadsCb) {
+      selectAllLeadsCb.checked = displayed.length > 0 && displayed.every((l) => selectedLeadKeys.has(l.identity_key));
+      selectAllLeadsCb.indeterminate = selCount > 0 && selCount < displayed.length;
+    }
+  }
+
   function renderLeadView() {
     const displayedLeads = getDisplayedLeads();
     renderTable(displayedLeads);
     renderCards(displayedLeads);
+    updateSelectionAndFilterUI();
   }
 
   // Helper to create expandable cell content
@@ -584,6 +684,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const rankNum = rankStr.replace("#", "").padStart(2, "0");
       const currentStatus = lead.lead_status || "New";
       const statusClass = currentStatus.toLowerCase();
+      const isSelected = selectedLeadKeys.has(lead.identity_key);
 
       // Hours tag style
       const hoursLower = (lead.hours_status || "").toLowerCase();
@@ -596,6 +697,11 @@ document.addEventListener("DOMContentLoaded", () => {
       let tagsHtml = tagsList.map(t => `<span class="tag-badge">${escapeHtml(t)}</span>`).join(" ");
 
       tr.innerHTML = `
+        <!-- Selection Checkbox -->
+        <td style="text-align: center;">
+          <input type="checkbox" class="row-select-cb" data-key="${escapeHtml(lead.identity_key)}" ${isSelected ? "checked" : ""}>
+        </td>
+
         <!-- Rank -->
         <td class="rank-cell">#${escapeHtml(rankNum)}</td>
 
@@ -639,16 +745,26 @@ document.addEventListener("DOMContentLoaded", () => {
           ${createExpandableHtml(lead.email, 25, "email-tag", true)}
         </td>
 
-        <!-- Owner -->
-        <td>
-          <span class="owner-chip">👤 ${escapeHtml(lead.owner || "Unassigned")}</span>
+        <!-- In-Table Editable Notes (Directly Auto-Saves to Leads Table) -->
+        <td class="notes-cell">
+          <div class="table-notes-wrap">
+            <input 
+              type="text" 
+              class="table-notes-input" 
+              data-key="${escapeHtml(lead.identity_key)}" 
+              value="${escapeHtml(lead.notes || '')}" 
+              placeholder="Add note..."
+              title="Click to edit. Press Enter or click outside to auto-save to database"
+            />
+            <span class="table-notes-save-indicator" title="Auto-saved to database">✓</span>
+          </div>
         </td>
 
-        <!-- Notes & Tags -->
+        <!-- Owner & Tags -->
         <td>
           <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+            <span class="owner-chip" style="font-size: 0.72rem;">👤 ${escapeHtml(lead.owner || "Unassigned")}</span>
             ${tagsHtml ? `<div>${tagsHtml}</div>` : ""}
-            ${lead.notes ? `<div style="font-size: 0.72rem; color: var(--text-secondary); line-height: 1.3;">📝 ${escapeHtml(lead.notes.length > 50 ? lead.notes.slice(0, 50) + '...' : lead.notes)}</div>` : '<span style="color: var(--text-muted); font-size: 0.72rem;">—</span>'}
           </div>
         </td>
 
@@ -662,14 +778,10 @@ document.addEventListener("DOMContentLoaded", () => {
           ${lead.hours_status ? `<span class="hours-tag ${hoursClass}">${escapeHtml(lead.hours_status)}</span>` : '<span style="color: var(--text-muted);">—</span>'}
         </td>
 
-        <!-- Doctor / Owner -->
-        <td>
-          ${createExpandableHtml(lead.owner_name_candidates, 35, "owner-tag")}
-        </td>
-
-        <!-- Links -->
+        <!-- Web, LinkedIn & Maps Links -->
         <td style="text-align: right; white-space: nowrap;">
-          ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link" title="Visit Official Website">Website ↗</a><br>` : ""}
+          ${lead.website ? `<a href="${escapeHtml(lead.website)}" target="_blank" rel="noopener" class="cell-link" title="Visit Official Website">Web ↗</a><br>` : ""}
+          ${lead.linkedin ? `<a href="${escapeHtml(lead.linkedin)}" target="_blank" rel="noopener" class="linkedin-tag" title="Open LinkedIn Business Page">💼 LinkedIn ↗</a><br>` : ""}
           ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" title="Open Google Maps Directions" style="color: var(--text-muted);">Maps ↗</a>` : ""}
         </td>
 
@@ -681,7 +793,48 @@ document.addEventListener("DOMContentLoaded", () => {
         </td>
       `;
 
-      // Status dropdown change
+      // Row Selection Checkbox listener
+      const rowCb = tr.querySelector(".row-select-cb");
+      if (rowCb) {
+        rowCb.addEventListener("change", (e) => {
+          if (e.target.checked) {
+            selectedLeadKeys.add(lead.identity_key);
+          } else {
+            selectedLeadKeys.delete(lead.identity_key);
+          }
+          updateSelectionAndFilterUI();
+        });
+      }
+
+      // Inline Notes listener - auto-saves directly to leads table with whatever status is selected
+      const noteInput = tr.querySelector(".table-notes-input");
+      const noteIndicator = tr.querySelector(".table-notes-save-indicator");
+      if (noteInput) {
+        const handleSaveNote = () => {
+          const val = noteInput.value.trim();
+          if (val !== (lead.notes || "")) {
+            lead.notes = val;
+            updateLeadWorkspaceField(lead, {
+              notes: val,
+              lead_status: lead.lead_status || "New",
+            }, true);
+            if (noteIndicator) {
+              noteIndicator.classList.add("saved");
+              setTimeout(() => noteIndicator.classList.remove("saved"), 2200);
+            }
+          }
+        };
+
+        noteInput.addEventListener("blur", handleSaveNote);
+        noteInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            noteInput.blur();
+          }
+        });
+      }
+
+      // Status dropdown change - saves immediately
       const statusSelect = tr.querySelector(".table-status-select");
       if (statusSelect) {
         statusSelect.addEventListener("change", (e) => {
@@ -770,9 +923,12 @@ document.addEventListener("DOMContentLoaded", () => {
       // Google maps link
       const mapsUrl = lead.google_maps_directions || (lead.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent((lead.business_name || "") + " " + lead.address)}` : "");
 
+      const isSelected = selectedLeadKeys.has(lead.identity_key);
+
       card.innerHTML = `
         <div class="card-item-top">
           <div style="display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;">
+            <input type="checkbox" class="row-select-cb" data-key="${escapeHtml(lead.identity_key)}" ${isSelected ? "checked" : ""}>
             <span style="font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--accent-primary);">#${escapeHtml(rankNum)}</span>
             <span class="lead-score-badge" title="Lead Score (${lead.data_confidence || 'Low'} Confidence)">${escapeHtml(String(lead.lead_score ?? 0))}</span>
             ${lead.category ? `<span class="category-tag">${escapeHtml(lead.category)}</span>` : ""}
@@ -852,9 +1008,9 @@ document.addEventListener("DOMContentLoaded", () => {
               <span>✉️</span> <span>Email</span>
             </button>`)
           }
-          ${mapsUrl ? `
-            <a href="${escapeHtml(mapsUrl)}" target="_blank" rel="noopener" class="mobile-action-btn" title="Google Maps Directions">
-              <span>📍</span> <span>Maps</span>
+          ${lead.linkedin ? `
+            <a href="${escapeHtml(lead.linkedin)}" target="_blank" rel="noopener" class="mobile-action-btn linkedin-btn" title="LinkedIn Profile">
+              <span>💼</span> <span>LinkedIn</span>
             </a>` : ""
           }
           ${lead.website ? `
@@ -870,6 +1026,19 @@ document.addEventListener("DOMContentLoaded", () => {
           </button>
         </div>
       `;
+
+      // Card Checkbox listener
+      const cardCb = card.querySelector(".row-select-cb");
+      if (cardCb) {
+        cardCb.addEventListener("change", (e) => {
+          if (e.target.checked) {
+            selectedLeadKeys.add(lead.identity_key);
+          } else {
+            selectedLeadKeys.delete(lead.identity_key);
+          }
+          updateSelectionAndFilterUI();
+        });
+      }
 
       // Status pill click: cycles to next status
       const statusPill = card.querySelector(".status-pill");
@@ -925,10 +1094,43 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // Download CSV - Workspace fields included right at the top for clean CRM management
+  // Select All Leads Checkbox
+  if (selectAllLeadsCb) {
+    selectAllLeadsCb.addEventListener("change", () => {
+      const displayed = getDisplayedLeads();
+      if (selectAllLeadsCb.checked) {
+        displayed.forEach((l) => selectedLeadKeys.add(l.identity_key));
+      } else {
+        displayed.forEach((l) => selectedLeadKeys.delete(l.identity_key));
+      }
+      document.querySelectorAll(".row-select-cb").forEach((cb) => {
+        const key = cb.dataset.key;
+        if (key) cb.checked = selectedLeadKeys.has(key);
+      });
+      updateSelectionAndFilterUI();
+    });
+  }
+
+  // Reset Filter Button
+  if (resetFilterBtn) {
+    resetFilterBtn.addEventListener("click", () => {
+      selectedLeadKeys.clear();
+      if (filterResultsInput) filterResultsInput.value = "";
+      if (leadQualityFilter) leadQualityFilter.value = "all";
+      selectedStatusFilter = "all";
+      document.querySelectorAll("#lead-pipeline-bar .pipeline-pill").forEach((b) => {
+        b.classList.toggle("active", b.dataset.status === "all");
+      });
+      renderLeadView();
+      showToast("Reset all filters & selections");
+    });
+  }
+
+  // Download CSV - Only exports selected or currently filtered leads
   downloadCsvBtn.addEventListener("click", () => {
-    if (currentLeads.length === 0) {
-      showToast("No leads available to export.");
+    const leadsToExport = getSelectedOrFilteredLeads();
+    if (leadsToExport.length === 0) {
+      showToast("No leads match current selection or filter to export.");
       return;
     }
 
@@ -946,6 +1148,7 @@ document.addEventListener("DOMContentLoaded", () => {
       "address",
       "hours_status",
       "website",
+      "linkedin",
       "email",
       "keyword",
       "review_snippet",
@@ -964,7 +1167,7 @@ document.addEventListener("DOMContentLoaded", () => {
     ];
 
     const rows = [fields.join(",")];
-    currentLeads.forEach((lead) => {
+    leadsToExport.forEach((lead) => {
       ensureWorkspaceFields(lead);
       const row = fields.map((h) => {
         let val = lead[h] !== undefined && lead[h] !== null ? lead[h].toString() : "";
@@ -984,7 +1187,7 @@ document.addEventListener("DOMContentLoaded", () => {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    showToast(`Exported ${currentLeads.length} leads with statuses & notes to CSV`);
+    showToast(`Exported ${leadsToExport.length} filtered leads with statuses, notes & LinkedIn to CSV`);
   });
 
   // Mobile Action Dock Listeners
@@ -1056,6 +1259,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (workspaceOwnerInput) workspaceOwnerInput.value = lead.owner || "";
     if (workspaceTagsInput) workspaceTagsInput.value = lead.tags || "";
     if (workspaceNotesInput) workspaceNotesInput.value = lead.notes || "";
+    if (workspaceLinkedinInput) workspaceLinkedinInput.value = lead.linkedin || "";
+    if (workspaceLinkedinLink) {
+      if (lead.linkedin) {
+        workspaceLinkedinLink.href = lead.linkedin;
+        workspaceLinkedinLink.style.display = "inline-flex";
+      } else {
+        workspaceLinkedinLink.style.display = "none";
+      }
+    }
     if (workspaceSaveStatus) workspaceSaveStatus.textContent = "";
 
     if (leadWorkspaceModal) leadWorkspaceModal.classList.remove("hidden");
@@ -1106,6 +1318,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const newOwner = workspaceOwnerInput.value.trim();
       const newTags = workspaceTagsInput.value.trim();
       const newNotes = workspaceNotesInput.value.trim();
+      const newLinkedin = workspaceLinkedinInput ? workspaceLinkedinInput.value.trim() : "";
 
       workspaceSaveBtn.disabled = true;
       if (workspaceSaveStatus) workspaceSaveStatus.textContent = "Saving...";
@@ -1115,6 +1328,7 @@ document.addEventListener("DOMContentLoaded", () => {
         owner: newOwner,
         tags: newTags,
         notes: newNotes,
+        linkedin: newLinkedin,
       };
 
       await updateLeadWorkspaceField(activeWorkspaceLead, updates);
@@ -1291,11 +1505,95 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Save current leads to Supabase
+  // Fetch distinct saved search tables from Supabase (separate categories/searches)
+  async function fetchSavedSearches() {
+    if (!savedTablesList) return;
+    try {
+      const res = await fetch(`/api/supabase/searches?table=${encodeURIComponent(currentSupabaseTable)}`);
+      const data = await res.json();
+      if (res.ok && data.searches) {
+        savedSearchesList = data.searches;
+        renderSavedTablesMenu();
+      }
+    } catch (err) {
+      console.warn("Could not fetch saved searches", err);
+    }
+  }
+
+  function renderSavedTablesMenu() {
+    if (!savedTablesList) return;
+    if (savedTablesCount) savedTablesCount.textContent = savedSearchesList.length;
+
+    if (savedSearchesList.length === 0) {
+      savedTablesList.innerHTML = `<div class="menu-empty">No saved searches yet. Save your first batch!</div>`;
+      return;
+    }
+
+    savedTablesList.innerHTML = "";
+    
+    // "View All Leads" entry
+    const allItem = document.createElement("div");
+    allItem.className = "saved-table-item";
+    allItem.innerHTML = `
+      <div class="saved-table-info">
+        <span class="saved-table-name">🌐 All Leads (${escapeHtml(currentSupabaseTable)})</span>
+        <span class="saved-table-meta">Global collection</span>
+      </div>
+      <span class="saved-table-badge">All</span>
+    `;
+    allItem.addEventListener("click", () => {
+      if (savedTablesMenu) savedTablesMenu.classList.add("hidden");
+      if (activeTableBadge) activeTableBadge.textContent = "All Leads";
+      loadLeadsFromSupabase(null);
+    });
+    savedTablesList.appendChild(allItem);
+
+    // Each individual search category/query table
+    savedSearchesList.forEach((search) => {
+      const item = document.createElement("div");
+      item.className = "saved-table-item";
+      const statusChips = Object.entries(search.statuses || {})
+        .map(([st, cnt]) => `${st}: ${cnt}`)
+        .join(" • ");
+      item.innerHTML = `
+        <div class="saved-table-info">
+          <span class="saved-table-name">🔍 ${escapeHtml(search.keyword)}</span>
+          <span class="saved-table-meta">${escapeHtml(statusChips || "Leads")}</span>
+        </div>
+        <span class="saved-table-badge">${search.count}</span>
+      `;
+      item.addEventListener("click", () => {
+        if (savedTablesMenu) savedTablesMenu.classList.add("hidden");
+        if (activeTableBadge) activeTableBadge.textContent = search.keyword.length > 20 ? search.keyword.slice(0, 18) + "…" : search.keyword;
+        loadLeadsFromSupabase(search.keyword);
+      });
+      savedTablesList.appendChild(item);
+    });
+  }
+
+  // Toggle Saved Tables dropdown menu
+  if (savedTablesBtn && savedTablesMenu) {
+    savedTablesBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      savedTablesMenu.classList.toggle("hidden");
+      if (!savedTablesMenu.classList.contains("hidden")) {
+        fetchSavedSearches();
+      }
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!savedTablesMenu.contains(e.target) && !savedTablesBtn.contains(e.target)) {
+        savedTablesMenu.classList.add("hidden");
+      }
+    });
+  }
+
+  // Save current leads to Supabase - ONLY saves selected or filtered leads
   if (saveSupabaseBtn) {
     saveSupabaseBtn.addEventListener("click", async () => {
-      if (!currentLeads || currentLeads.length === 0) {
-        showToast("No leads to save. Extract leads first!");
+      const leadsToSave = getSelectedOrFilteredLeads();
+      if (!leadsToSave || leadsToSave.length === 0) {
+        showToast("No leads match current selection or filter to save.");
         return;
       }
       saveSupabaseBtn.disabled = true;
@@ -1307,7 +1605,7 @@ document.addEventListener("DOMContentLoaded", () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            leads: currentLeads,
+            leads: leadsToSave,
             query: currentQuery,
             table: currentSupabaseTable,
           }),
@@ -1316,6 +1614,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (res.ok && result.success) {
           showToast(`⚡ Saved ${result.count} leads to table '${result.table}'!`);
           checkSupabaseStatus(false, currentSupabaseTable);
+          fetchSavedSearches();
         } else if (result.needs_schema) {
           showToast(`⚠️ Table '${currentSupabaseTable}' not found in Supabase. Please run the SQL schema.`);
           openSupabaseModal();
@@ -1329,28 +1628,38 @@ document.addEventListener("DOMContentLoaded", () => {
         showToast(`Network error: ${err.message}`);
       } finally {
         saveSupabaseBtn.disabled = false;
-        if (saveSupabaseText) saveSupabaseText.textContent = "Save to Supabase";
-        if (mobileDockSyncText) mobileDockSyncText.textContent = "Save DB";
+        updateSelectionAndFilterUI();
       }
     });
   }
 
-  // Load leads from Supabase
-  async function loadLeadsFromSupabase() {
+  // Load leads from Supabase (supports specific keyword table separation)
+  async function loadLeadsFromSupabase(keyword = null) {
     closeSupabaseModal();
-    showToast(`Fetching leads from table '${currentSupabaseTable}'...`);
+    const queryDesc = keyword ? `'${keyword}'` : `all in '${currentSupabaseTable}'`;
+    showToast(`Fetching ${queryDesc}...`);
     try {
-      const res = await fetch(`/api/supabase/leads?limit=100&table=${encodeURIComponent(currentSupabaseTable)}`);
+      let url = `/api/supabase/leads?limit=500&table=${encodeURIComponent(currentSupabaseTable)}`;
+      if (keyword) {
+        url += `&keyword=${encodeURIComponent(keyword)}`;
+      }
+      const res = await fetch(url);
       const data = await res.json();
       if (res.ok && data.leads && data.leads.length > 0) {
         currentLeads = data.leads;
-        currentQuery = `Supabase (${currentSupabaseTable})`;
+        currentQuery = keyword ? keyword : `Supabase (${currentSupabaseTable})`;
+        if (activeTableBadge && keyword) {
+          activeTableBadge.textContent = keyword.length > 20 ? keyword.slice(0, 18) + "…" : keyword;
+        } else if (activeTableBadge) {
+          activeTableBadge.textContent = "Saved Tables";
+        }
+        selectedLeadKeys.clear();
         resultsPanel.classList.remove("hidden");
         emptyState.classList.add("hidden");
         renderResults(currentLeads);
-        showToast(`Loaded ${data.leads.length} leads from Supabase (${currentSupabaseTable})!`);
+        showToast(`Loaded ${data.leads.length} leads for ${keyword || currentSupabaseTable}!`);
       } else if (data.leads && data.leads.length === 0) {
-        showToast(`No leads found in table '${currentSupabaseTable}' yet. Extract leads and save!`);
+        showToast(`No leads found in table '${currentSupabaseTable}'${keyword ? ` for '${keyword}'` : ""}.`);
       } else {
         showToast(`Could not load leads from '${currentSupabaseTable}'. Check configuration.`);
         openSupabaseModal();
@@ -1360,9 +1669,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  if (loadSupabaseBtn) loadSupabaseBtn.addEventListener("click", loadLeadsFromSupabase);
-  if (modalLoadLeadsBtn) modalLoadLeadsBtn.addEventListener("click", loadLeadsFromSupabase);
+  if (loadSupabaseBtn) loadSupabaseBtn.addEventListener("click", () => loadLeadsFromSupabase(null));
+  if (modalLoadLeadsBtn) modalLoadLeadsBtn.addEventListener("click", () => loadLeadsFromSupabase(null));
+
+  const navSavedTablesBtn = document.getElementById("nav-saved-tables-btn");
+  const emptyLoadTablesBtn = document.getElementById("empty-load-tables-btn");
+
+  if (navSavedTablesBtn) {
+    navSavedTablesBtn.addEventListener("click", () => {
+      if (resultsPanel.classList.contains("hidden")) {
+        loadLeadsFromSupabase(null);
+      } else if (savedTablesBtn) {
+        savedTablesBtn.click();
+      }
+    });
+  }
+
+  if (emptyLoadTablesBtn) {
+    emptyLoadTablesBtn.addEventListener("click", () => {
+      loadLeadsFromSupabase(null);
+    });
+  }
 
   // Initialize Supabase status on page load (auto-queries environment table: 'leads' on Vercel, 'leads_local' locally)
-  checkSupabaseStatus(false, null);
+  checkSupabaseStatus(false, null).then(() => fetchSavedSearches());
 });

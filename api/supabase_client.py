@@ -168,6 +168,7 @@ def format_lead_for_supabase(lead: dict, query: str = "") -> dict:
         "google_maps_directions": str(lead.get("google_maps_directions") or "").strip(),
         "phone": str(lead.get("phone") or "").strip(),
         "website": str(lead.get("website") or "").strip(),
+        "linkedin": str(lead.get("linkedin") or "").strip(),
         "email": str(lead.get("email") or "").strip(),
         "contact_page": str(lead.get("contact_page") or "").strip(),
         "about_page": str(lead.get("about_page") or "").strip(),
@@ -313,6 +314,11 @@ def upsert_leads(leads: list, query: str = "", table: str | None = None) -> dict
         chunk = formatted_leads[i:i + chunk_size]
         try:
             resp = requests.post(endpoint, json=chunk, headers=headers, timeout=15)
+            if resp.status_code == 400 and ("PGRST204" in resp.text or "linkedin" in resp.text):
+                # Remote table does not have linkedin column yet; retry without it
+                chunk_fallback = [{k: v for k, v in row.items() if k != "linkedin"} for row in chunk]
+                resp = requests.post(endpoint, json=chunk_fallback, headers=headers, timeout=15)
+
             if resp.status_code in (200, 201):
                 try:
                     data = resp.json()
@@ -352,7 +358,7 @@ def upsert_leads(leads: list, query: str = "", table: str | None = None) -> dict
 
 def update_lead_workspace(identity_key: str, updates: dict, table: str | None = None) -> dict:
     """
-    Update workspace fields (lead_status, notes, tags, owner) for a single lead by identity_key.
+    Update workspace fields (lead_status, notes, tags, owner, linkedin) for a single lead by identity_key.
     Compatible with Supabase REST PATCH endpoint.
     """
     if not identity_key:
@@ -362,7 +368,7 @@ def update_lead_workspace(identity_key: str, updates: dict, table: str | None = 
     if not cfg["url"] or not cfg["key"]:
         return {"success": False, "error": "Supabase credentials not configured in .env"}
 
-    allowed_fields = {"lead_status", "notes", "tags", "owner"}
+    allowed_fields = {"lead_status", "notes", "tags", "owner", "linkedin"}
     patch_data = {k: v for k, v in updates.items() if k in allowed_fields}
     if not patch_data:
         return {"success": False, "error": "No valid workspace fields provided"}
@@ -377,6 +383,12 @@ def update_lead_workspace(identity_key: str, updates: dict, table: str | None = 
 
     try:
         resp = requests.patch(endpoint, json=patch_data, headers=headers, timeout=10)
+        if resp.status_code == 400 and "linkedin" in patch_data and "PGRST204" in resp.text:
+            # Table lacks linkedin column; retry saving other workspace fields
+            fallback_patch = {k: v for k, v in patch_data.items() if k != "linkedin"}
+            if fallback_patch:
+                resp = requests.patch(endpoint, json=fallback_patch, headers=headers, timeout=10)
+
         if resp.status_code in (200, 204):
             try:
                 updated_records = resp.json() if resp.text else []
@@ -398,8 +410,8 @@ def update_lead_workspace(identity_key: str, updates: dict, table: str | None = 
         return {"success": False, "error": f"Network error updating lead: {str(exc)}"}
 
 
-def fetch_saved_leads(query: str = "", limit: int = 100, min_score: int = 0, lead_status: str = "", table: str | None = None) -> list:
-    """Fetch stored leads from Supabase with optional search query, score filter, and lead_status."""
+def fetch_saved_leads(query: str = "", keyword: str = "", limit: int = 500, min_score: int = 0, lead_status: str = "", table: str | None = None) -> list:
+    """Fetch stored leads from Supabase with optional search query, keyword filter, score filter, and lead_status."""
     cfg = get_supabase_config(table_override=table)
     if not cfg["url"] or not cfg["key"]:
         return []
@@ -412,7 +424,7 @@ def fetch_saved_leads(query: str = "", limit: int = 100, min_score: int = 0, lea
     params = {
         "select": "*",
         "order": "lead_score.desc,created_at.desc",
-        "limit": str(max(1, min(limit, 500))),
+        "limit": str(max(1, min(limit, 1000))),
     }
 
     if min_score > 0:
@@ -421,15 +433,66 @@ def fetch_saved_leads(query: str = "", limit: int = 100, min_score: int = 0, lea
     if lead_status:
         params["lead_status"] = f"eq.{lead_status}"
 
-    if query:
+    if keyword:
+        params["keyword"] = f"eq.{keyword}"
+    elif query:
         clean_q = re.sub(r"[\",*]", "", query).strip()
         if clean_q:
-            params["or"] = f"(business_name.ilike.*{clean_q}*,keyword.ilike.*{clean_q}*,category.ilike.*{clean_q}*,address.ilike.*{clean_q}*)"
+            # Query match on keyword or business fields
+            params["or"] = f"(keyword.ilike.*{clean_q}*,business_name.ilike.*{clean_q}*,category.ilike.*{clean_q}*,address.ilike.*{clean_q}*)"
 
     try:
-        resp = requests.get(endpoint, headers=headers, params=params, timeout=10)
+        resp = requests.get(endpoint, headers=headers, params=params, timeout=12)
         if resp.status_code in (200, 206):
             return resp.json()
         return []
     except requests.exceptions.RequestException:
+        return []
+
+
+def get_saved_searches(table: str | None = None) -> list:
+    """
+    Return all distinct saved searches/categories in the table with lead counts and timestamps.
+    Enables user to see and switch between searches without table collision.
+    """
+    cfg = get_supabase_config(table_override=table)
+    if not cfg["url"] or not cfg["key"]:
+        return []
+
+    endpoint = f"{cfg['url']}/rest/v1/{cfg['table']}"
+    headers = {
+        "apikey": cfg["key"],
+        "Authorization": f"Bearer {cfg['key']}",
+    }
+    params = {
+        "select": "keyword,created_at,lead_status",
+        "limit": "1000",
+    }
+    try:
+        from collections import defaultdict
+        resp = requests.get(endpoint, headers=headers, params=params, timeout=10)
+        if resp.status_code in (200, 206):
+            data = resp.json()
+            groups = defaultdict(lambda: {"count": 0, "last_created": "", "statuses": defaultdict(int)})
+            for row in data:
+                kw = (row.get("keyword") or "").strip() or "General Leads"
+                groups[kw]["count"] += 1
+                s = row.get("lead_status") or "New"
+                groups[kw]["statuses"][s] += 1
+                ca = row.get("created_at") or ""
+                if ca > groups[kw]["last_created"]:
+                    groups[kw]["last_created"] = ca
+
+            result = []
+            for kw, info in sorted(groups.items(), key=lambda x: x[1]["last_created"], reverse=True):
+                result.append({
+                    "keyword": kw,
+                    "table": cfg["table"],
+                    "count": info["count"],
+                    "last_created": info["last_created"],
+                    "statuses": dict(info["statuses"]),
+                })
+            return result
+        return []
+    except Exception:
         return []

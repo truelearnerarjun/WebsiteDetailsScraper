@@ -145,6 +145,7 @@ FIELDS = [
     "address",
     "hours_status",
     "website",
+    "linkedin",
     "email",
     "keyword",
     "review_snippet",
@@ -338,6 +339,98 @@ def extract_phones(soup: BeautifulSoup) -> set:
             phones.add(cleaned)
 
     return phones
+
+
+def clean_linkedin_url(url: str) -> str:
+    """Normalize and clean a LinkedIn company/profile/school URL."""
+    if not url:
+        return ""
+    clean = re.sub(r"[\?#].*$", "", url).strip().rstrip("/")
+    lower = clean.lower()
+    if any(x in lower for x in ["/sharearticle", "/sharing", "/share?", "/intent", "/pulse/"]):
+        return ""
+    if not (lower.startswith("http://") or lower.startswith("https://")):
+        if lower.startswith("//"):
+            clean = "https:" + clean
+        else:
+            clean = "https://" + clean.lstrip("/")
+    return clean
+
+
+def extract_linkedin(soup: BeautifulSoup, base_url: str = "") -> str:
+    """Extract business LinkedIn company, school, or profile URL from page."""
+    # 1. Search anchor tags
+    for a in soup.find_all("a", href=True):
+        href = str(a.get("href") or "").strip()
+        lower = href.lower()
+        if "linkedin.com" in lower:
+            if any(pattern in lower for pattern in [
+                "linkedin.com/company/", "linkedin.com/school/", "linkedin.com/showcase/", "linkedin.com/in/"
+            ]):
+                clean = clean_linkedin_url(href)
+                if clean:
+                    return clean
+
+    # 2. Search JSON-LD schemas
+    for script in soup.find_all("script", type="application/ld+json"):
+        raw = script.string or ""
+        matches = re.findall(r'https?://(?:www\.)?linkedin\.com/(?:company|school|showcase|in)/[a-zA-Z0-9_\-%]+', raw)
+        for m in matches:
+            clean = clean_linkedin_url(m)
+            if clean:
+                return clean
+
+    # 3. Search meta tags
+    for meta in soup.find_all("meta"):
+        content = str(meta.get("content") or "")
+        if "linkedin.com" in content.lower():
+            m = re.search(r'https?://(?:www\.)?linkedin\.com/(?:company|school|showcase|in)/[a-zA-Z0-9_\-%]+', content)
+            if m:
+                clean = clean_linkedin_url(m.group(0))
+                if clean:
+                    return clean
+
+    return ""
+
+
+def find_business_linkedin(business_name: str, location: str = "") -> str:
+    """
+    High-intent fallback discovery for business LinkedIn page using ddgs.
+    Finds verified LinkedIn company/school profiles.
+    """
+    if not business_name or len(business_name.strip()) < 3:
+        return ""
+    try:
+        from ddgs import DDGS
+        clean_name = re.split(r"[-|:·]", business_name)[0].strip()
+        loc_city = ""
+        if location:
+            parts = [p.strip() for p in re.split(r"[,;]", location) if p.strip()]
+            if len(parts) >= 2:
+                loc_city = parts[-2]
+            elif parts:
+                loc_city = parts[0]
+
+        queries = [
+            f"{clean_name} {loc_city} site:linkedin.com".strip(),
+            f"{clean_name} linkedin company".strip(),
+        ]
+        dd = DDGS()
+        for q in queries:
+            try:
+                results = list(dd.text(q, max_results=4))
+                for r in results:
+                    href = r.get("href", "")
+                    lower = href.lower()
+                    if any(x in lower for x in ["linkedin.com/company/", "linkedin.com/school/", "linkedin.com/showcase/", "linkedin.com/in/"]):
+                        clean = clean_linkedin_url(href)
+                        if clean:
+                            return clean
+            except Exception:
+                continue
+    except Exception:
+        pass
+    return ""
 
 
 def extract_reviews(soup: BeautifulSoup) -> tuple:
@@ -985,6 +1078,7 @@ def search_google_places(
                                 "address": address,
                                 "hours_status": hours_status,
                                 "website": website,
+                                "linkedin": "",
                                 "keyword": keyword,
                                 "review_snippet": snippet,
                                 "contact_page": "",
@@ -1023,7 +1117,9 @@ def search_google_places(
                                 page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] - 50)
                                 page.mouse.wheel(0, 4500)
 
-                        page.wait_for_timeout(1800)
+                        # Progressive wait: allow extra time when nearing higher pagination batches
+                        wait_ms = 2400 if (stuck_count > 0 or len(discovered) >= 50) else 1800
+                        page.wait_for_timeout(wait_ms)
 
                         # Detect if Google Maps reached the end of all results
                         has_reached_end = page.evaluate("""() => {
@@ -1038,7 +1134,7 @@ def search_google_places(
                             if has_reached_end and stuck_count >= 2:
                                 print(f"[Places] Reached end of Google Maps results ({len(discovered)} places).", flush=True)
                                 break
-                            if stuck_count >= 6:
+                            if stuck_count >= 8:
                                 break
                         else:
                             stuck_count = 0
@@ -1219,12 +1315,17 @@ def scrape_site(target_info: dict) -> dict:
     hours_status = target_info.get("hours_status", "")
     review_snippet = target_info.get("review_snippet", "")
     google_maps_directions = target_info.get("google_maps_directions", "")
+    predefined_linkedin = target_info.get("linkedin", "")
 
     # If place has no external website or is google maps, return places data immediately
     if not url or not url.startswith("http") or "google.com/maps" in url:
+        business_display = predefined_name or url
+        linkedin = predefined_linkedin
+        if not linkedin and business_display:
+            linkedin = find_business_linkedin(business_display, address or keyword)
         return {
             "search_rank": predefined_rank,
-            "business_name": predefined_name or url,
+            "business_name": business_display,
             "category": category,
             "review_rating": review_rating,
             "review_count": review_count,
@@ -1232,6 +1333,7 @@ def scrape_site(target_info: dict) -> dict:
             "address": address,
             "hours_status": hours_status,
             "website": "" if "google.com/maps" in url else url,
+            "linkedin": linkedin,
             "email": "",
             "keyword": keyword,
             "review_snippet": review_snippet,
@@ -1246,9 +1348,13 @@ def scrape_site(target_info: dict) -> dict:
 
     target_url = normalize_url(url)
     if not target_url:
+        business_display = predefined_name or url
+        linkedin = predefined_linkedin
+        if not linkedin and business_display:
+            linkedin = find_business_linkedin(business_display, address or keyword)
         return {
             "search_rank": predefined_rank,
-            "business_name": predefined_name or url,
+            "business_name": business_display,
             "category": category,
             "review_rating": review_rating,
             "review_count": review_count,
@@ -1256,6 +1362,7 @@ def scrape_site(target_info: dict) -> dict:
             "address": address,
             "hours_status": hours_status,
             "website": url,
+            "linkedin": linkedin,
             "email": "",
             "keyword": keyword,
             "review_snippet": review_snippet,
@@ -1279,6 +1386,7 @@ def scrape_site(target_info: dict) -> dict:
     if phone_from_places:
         phones.add(phone_from_places)
     names = []
+    linkedin = predefined_linkedin
 
     contact_page = ""
     about_page = ""
@@ -1316,6 +1424,11 @@ def scrape_site(target_info: dict) -> dict:
         phones.update(extract_phones(soup))
         names.extend(extract_name_candidates(soup))
 
+        if not linkedin:
+            li_found = extract_linkedin(soup, current)
+            if li_found:
+                linkedin = li_found
+
         # Fallback to schema.org reviews only if not provided by Google Places
         if not review_rating or not review_count:
             p_rating, p_count = extract_reviews(soup)
@@ -1338,6 +1451,9 @@ def scrape_site(target_info: dict) -> dict:
                     queue.append(page)
 
     clean_business_name = business_name.strip() if business_name.strip() else (predefined_name or target_url)
+    if not linkedin and clean_business_name:
+        linkedin = find_business_linkedin(clean_business_name, address or keyword)
+
     status = "success" if pages_checked > 0 else "failed_to_fetch"
 
     return {
@@ -1350,6 +1466,7 @@ def scrape_site(target_info: dict) -> dict:
         "address": address,
         "hours_status": hours_status,
         "website": target_url,
+        "linkedin": linkedin,
         "email": "; ".join(sorted(emails)),
         "keyword": keyword,
         "review_snippet": review_snippet,
@@ -1509,7 +1626,7 @@ def merge_duplicate_leads(leads: list) -> list:
         primary["duplicate_count"] = int(primary.get("duplicate_count") or 1) + int(item.get("duplicate_count") or 1)
         primary["merged_ranks"] = unique_values(primary.get("merged_ranks", ""), item.get("search_rank", ""))
         primary["phone"] = unique_phone_values(primary.get("phone", ""), item.get("phone", ""))
-        for field in ("email", "owner_name_candidates", "contact_page", "about_page", "team_page"):
+        for field in ("email", "owner_name_candidates", "contact_page", "about_page", "team_page", "linkedin"):
             primary[field] = unique_values(primary.get(field, ""), item.get(field, ""))
         for field in ("website", "address", "category", "hours_status", "review_rating", "review_count", "review_snippet"):
             if not primary.get(field) and item.get(field):
@@ -1529,6 +1646,8 @@ def add_lead_intelligence(leads: list) -> list:
         if item.get("business_name") and item.get("address"):
             score += 10
         if item.get("website"):
+            score += 10
+        if item.get("linkedin"):
             score += 10
         if item.get("phone"):
             score += 20
