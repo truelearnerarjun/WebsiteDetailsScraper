@@ -21,4 +21,9 @@ from api.supabase_client import (
     upsert_leads,
     fetch_saved_leads,
     update_lead_workspace,
+    delete_lead,
+    delete_leads,
+    delete_table,
+    get_saved_searches,
 )
+

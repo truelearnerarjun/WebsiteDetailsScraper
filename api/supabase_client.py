@@ -410,6 +410,95 @@ def update_lead_workspace(identity_key: str, updates: dict, table: str | None = 
         return {"success": False, "error": f"Network error updating lead: {str(exc)}"}
 
 
+def delete_lead(identity_key: str = "", lead_id: int | None = None, table: str | None = None) -> dict:
+    """Permanently delete a lead from Supabase by identity_key or id."""
+    cfg = get_supabase_config(table_override=table)
+    if not cfg["url"] or not cfg["key"]:
+        return {
+            "success": False,
+            "configured": False,
+            "error": "Supabase credentials not configured in .env",
+            "table": cfg["table"],
+        }
+
+    key = (identity_key or "").strip()
+    if not key and not lead_id:
+        return {"success": False, "error": "Missing identity_key or lead_id"}
+
+    endpoint = f"{cfg['url']}/rest/v1/{cfg['table']}"
+    headers = {
+        "apikey": cfg["key"],
+        "Authorization": f"Bearer {cfg['key']}",
+        "Prefer": "return=representation",
+    }
+    params = {}
+    if key:
+        params["identity_key"] = f"eq.{key}"
+    elif lead_id:
+        params["id"] = f"eq.{lead_id}"
+
+    try:
+        resp = requests.delete(endpoint, headers=headers, params=params, timeout=10)
+        if resp.status_code in (200, 204):
+            deleted = resp.json() if resp.text else []
+            return {
+                "success": True,
+                "deleted_count": len(deleted) if isinstance(deleted, list) else 1,
+                "table": cfg["table"],
+                "message": f"Lead deleted from Supabase table '{cfg['table']}'",
+            }
+        return {
+            "success": False,
+            "table": cfg["table"],
+            "error": f"Supabase delete error ({resp.status_code}): {resp.text[:200]}",
+        }
+    except requests.exceptions.RequestException as exc:
+        return {"success": False, "error": f"Network error deleting lead: {str(exc)}"}
+
+
+def delete_leads(identity_keys: list[str], table: str | None = None) -> dict:
+    """Permanently delete multiple leads from Supabase by identity_keys."""
+    cfg = get_supabase_config(table_override=table)
+    if not cfg["url"] or not cfg["key"]:
+        return {
+            "success": False,
+            "configured": False,
+            "error": "Supabase credentials not configured in .env",
+            "table": cfg["table"],
+        }
+
+    clean_keys = [str(k).strip() for k in identity_keys if str(k).strip()]
+    if not clean_keys:
+        return {"success": False, "error": "No identity_keys provided for deletion"}
+
+    endpoint = f"{cfg['url']}/rest/v1/{cfg['table']}"
+    headers = {
+        "apikey": cfg["key"],
+        "Authorization": f"Bearer {cfg['key']}",
+        "Prefer": "return=representation",
+    }
+    quoted_keys = ",".join(f'"{k}"' if (":" in k or " " in k) else k for k in clean_keys)
+    params = {"identity_key": f"in.({quoted_keys})"}
+
+    try:
+        resp = requests.delete(endpoint, headers=headers, params=params, timeout=12)
+        if resp.status_code in (200, 204):
+            deleted = resp.json() if resp.text else []
+            return {
+                "success": True,
+                "deleted_count": len(deleted) if isinstance(deleted, list) else len(clean_keys),
+                "table": cfg["table"],
+                "message": f"Deleted {len(clean_keys)} leads from Supabase table '{cfg['table']}'",
+            }
+        return {
+            "success": False,
+            "table": cfg["table"],
+            "error": f"Supabase delete error ({resp.status_code}): {resp.text[:200]}",
+        }
+    except requests.exceptions.RequestException as exc:
+        return {"success": False, "error": f"Network error deleting leads: {str(exc)}"}
+
+
 def fetch_saved_leads(query: str = "", keyword: str = "", limit: int = 500, min_score: int = 0, lead_status: str = "", table: str | None = None) -> list:
     """Fetch stored leads from Supabase with optional search query, keyword filter, score filter, and lead_status."""
     cfg = get_supabase_config(table_override=table)
@@ -496,3 +585,48 @@ def get_saved_searches(table: str | None = None) -> list:
         return []
     except Exception:
         return []
+
+
+def delete_table(keyword: str, table: str | None = None) -> dict:
+    """Permanently delete all leads belonging to a specific search category/table from Supabase."""
+    cfg = get_supabase_config(table_override=table)
+    if not cfg["url"] or not cfg["key"]:
+        return {
+            "success": False,
+            "configured": False,
+            "error": "Supabase credentials not configured in .env",
+            "table": cfg["table"],
+        }
+
+    clean_kw = (keyword or "").strip()
+    if not clean_kw:
+        return {"success": False, "error": "Table name (keyword) is required for deletion"}
+
+    endpoint = f"{cfg['url']}/rest/v1/{cfg['table']}"
+    headers = {
+        "apikey": cfg["key"],
+        "Authorization": f"Bearer {cfg['key']}",
+        "Prefer": "return=representation",
+    }
+    params = {"keyword": f"eq.{clean_kw}"}
+
+    try:
+        resp = requests.delete(endpoint, headers=headers, params=params, timeout=15)
+        if resp.status_code in (200, 204):
+            deleted = resp.json() if resp.text else []
+            count = len(deleted) if isinstance(deleted, list) else 0
+            return {
+                "success": True,
+                "deleted_count": count,
+                "table": cfg["table"],
+                "keyword": clean_kw,
+                "message": f"Table '{clean_kw}' ({count} leads) deleted successfully from Supabase table '{cfg['table']}'",
+            }
+        return {
+            "success": False,
+            "table": cfg["table"],
+            "error": f"Supabase delete table error ({resp.status_code}): {resp.text[:200]}",
+        }
+    except requests.exceptions.RequestException as exc:
+        return {"success": False, "error": f"Network error deleting table: {str(exc)}"}
+

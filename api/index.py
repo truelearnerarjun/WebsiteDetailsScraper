@@ -813,6 +813,144 @@ def update_lead():
     })
 
 
+@app.route("/api/leads/add", methods=["POST"])
+def add_lead():
+    """Add a custom/manual lead, format it, compute score, and sync with Supabase if configured."""
+    data = request.get_json(silent=True) or {}
+    lead_input = data.get("lead") or data
+    if not isinstance(lead_input, dict):
+        return jsonify({"success": False, "error": "Invalid lead data"}), 400
+
+    business_name = str(lead_input.get("business_name") or "").strip()
+    if not business_name:
+        return jsonify({"success": False, "error": "Business name is required"}), 400
+
+    table = data.get("table", "").strip() or None
+    query = data.get("query", "").strip() or "Manual Leads"
+
+    lead = dict(lead_input)
+    lead["business_name"] = business_name
+    lead["search_rank"] = lead.get("search_rank") or "Custom"
+    lead["status"] = lead.get("status") or "manual"
+    lead["data_sources"] = lead.get("data_sources") or "Manual Entry"
+    lead["data_confidence"] = lead.get("data_confidence") or "High"
+    lead["keyword"] = query
+
+    # Compute intelligence and score
+    intelligent_leads = add_lead_intelligence([lead])
+    intelligent_lead = intelligent_leads[0] if intelligent_leads else lead
+
+    # Format for schema compliance and generate deterministic identity_key
+    formatted_lead = supabase_client.format_lead_for_supabase(intelligent_lead, query=query)
+
+    supabase_synced = False
+    warning = None
+    if supabase_client.is_configured():
+        save_res = supabase_client.upsert_leads([formatted_lead], query=query, table=table)
+        supabase_synced = bool(save_res.get("success"))
+        if not supabase_synced:
+            warning = save_res.get("error")
+
+    return jsonify({
+        "success": True,
+        "lead": formatted_lead,
+        "supabase_synced": supabase_synced,
+        "warning": warning,
+        "message": f"Lead '{business_name}' added successfully"
+    }), 201
+
+
+@app.route("/api/leads/delete", methods=["POST", "DELETE"])
+def delete_lead_endpoint():
+    """Delete one or multiple leads from Supabase permanently."""
+    data = request.get_json(silent=True) or {}
+    identity_key = data.get("identity_key", "").strip()
+    identity_keys = data.get("identity_keys", [])
+    table = data.get("table", "").strip() or None
+
+    if not identity_key and not identity_keys:
+        return jsonify({"success": False, "error": "Missing identity_key or identity_keys parameter"}), 400
+
+    if supabase_client.is_configured():
+        if identity_keys and isinstance(identity_keys, list):
+            res = supabase_client.delete_leads(identity_keys, table=table)
+        else:
+            res = supabase_client.delete_lead(identity_key, table=table)
+
+        status_code = 200 if res.get("success") else 400
+        return jsonify(res), status_code
+
+    count = len(identity_keys) if identity_keys else 1
+    return jsonify({
+        "success": True,
+        "deleted_count": count,
+        "supabase_synced": False,
+        "message": "Lead(s) deleted locally (Supabase not configured)",
+    }), 200
+
+
+@app.route("/api/tables/delete", methods=["POST", "DELETE"])
+def delete_table_endpoint():
+    """Delete an entire table/category search from Supabase permanently."""
+    data = request.get_json(silent=True) or {}
+    keyword = data.get("keyword", "").strip() or request.args.get("keyword", "").strip()
+    table = data.get("table", "").strip() or None
+
+    if not keyword:
+        return jsonify({"success": False, "error": "Missing 'keyword' (table name) parameter"}), 400
+
+    if supabase_client.is_configured():
+        res = supabase_client.delete_table(keyword, table=table)
+        status_code = 200 if res.get("success") else 400
+        return jsonify(res), status_code
+
+    return jsonify({
+        "success": True,
+        "keyword": keyword,
+        "supabase_synced": False,
+        "message": f"Table '{keyword}' deleted locally (Supabase not configured)",
+    }), 200
+
+
+@app.route("/api/leads/assign-table", methods=["POST"])
+def assign_leads_to_table():
+    """Assign or move selected leads to a specific table/search category."""
+    data = request.get_json(silent=True) or {}
+    leads = data.get("leads", [])
+    target_table = data.get("target_table", "").strip() or data.get("query", "").strip()
+    table = data.get("table", "").strip() or None
+
+    if not target_table:
+        return jsonify({"success": False, "error": "target_table is required"}), 400
+    if not leads:
+        return jsonify({"success": False, "error": "No leads provided to assign"}), 400
+
+    updated_leads = []
+    for l in leads:
+        item = dict(l)
+        item["keyword"] = target_table
+        updated_leads.append(item)
+
+    if supabase_client.is_configured():
+        res = supabase_client.upsert_leads(updated_leads, query=target_table, table=table)
+        status_code = 200 if res.get("success") else 400
+        return jsonify({
+            "success": res.get("success", False),
+            "count": len(updated_leads),
+            "target_table": target_table,
+            "supabase_synced": True,
+            "message": f"Added {len(updated_leads)} lead(s) to table '{target_table}'",
+        }), status_code
+
+    return jsonify({
+        "success": True,
+        "count": len(updated_leads),
+        "target_table": target_table,
+        "supabase_synced": False,
+        "message": f"Added {len(updated_leads)} lead(s) to table '{target_table}' locally (Supabase not configured)",
+    }), 200
+
+
 @app.route("/api/supabase/schema", methods=["GET"])
 def supabase_schema():
     schema_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "supabase_schema.sql"))

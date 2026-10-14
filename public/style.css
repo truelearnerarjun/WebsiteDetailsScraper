@@ -2277,4 +2277,367 @@ body {
   background: rgba(14, 165, 233, 0.22);
 }
 
+/* Danger Button & Delete Actions */
+.danger-btn {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  transition: all 0.15s ease;
+}
+
+.danger-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #fecaca;
+  box-shadow: 0 0 12px rgba(239, 68, 68, 0.25);
+}
+
+.danger-btn:active {
+  transform: scale(0.97);
+}
+
+/* In-table Action Buttons */
+.table-action-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  justify-content: center;
+}
+
+.table-delete-btn {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  color: #f87171;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1;
+}
+
+.table-delete-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: #ef4444;
+  color: #fff;
+  transform: scale(1.08);
+}
+
+/* Saved Search Tables: Action Bar & Delete Button */
+.menu-action-bar {
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.menu-create-table-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-blue);
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px dashed rgba(56, 189, 248, 0.35);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.menu-create-table-btn:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: var(--accent-blue);
+  color: #ffffff;
+}
+
+.saved-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.saved-table-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+  border-radius: 4px;
+  opacity: 0.55;
+  transition: all 0.15s ease;
+}
+
+.saved-table-delete-btn:hover {
+  opacity: 1;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+  transform: scale(1.15);
+}
+
+.mobile-action-btn.delete-btn {
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.mobile-action-btn.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.22);
+  color: #fecaca;
+}
+
+/* ============================================================= */
+/* Top-Right Navbar Save Button & Realtime Sync Indicator        */
+/* ============================================================= */
+
+.nav-save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: #ffffff;
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  border-radius: var(--radius-sm);
+  padding: 0.38rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+  white-space: nowrap;
+}
+
+.nav-save-btn:hover {
+  background: linear-gradient(135deg, #047857 0%, #059669 100%);
+  border-color: #34d399;
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+  transform: translateY(-1px);
+}
+
+.nav-save-btn:active {
+  transform: translateY(0);
+}
+
+.nav-save-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.nav-save-btn.saved-success {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  border-color: #6ee7b7;
+  color: #064e3b;
+  font-weight: 700;
+}
+
+.realtime-sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-subtle);
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  user-select: none;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.realtime-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+  transition: all 0.2s ease;
+}
+
+.realtime-sync-badge.saving .realtime-pulse-dot {
+  background: #f59e0b;
+  box-shadow: 0 0 6px #f59e0b;
+  animation: pulseSaving 1s infinite;
+}
+
+.realtime-sync-badge.saving {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.3);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+@keyframes pulseSaving {
+  0% { transform: scale(0.9); opacity: 0.6; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.9); opacity: 0.6; }
+}
+
+/* ============================================================= */
+/* Phone & Mobile Responsiveness Optimizations (<= 768px, <= 480px) */
+/* ============================================================= */
+
+@media (max-width: 768px) {
+  .shell {
+    padding-bottom: 5.5rem !important; /* Prevent bottom dock from covering content */
+  }
+
+  .navbar {
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .nav-left {
+    flex: 1 1 auto;
+  }
+
+  .nav-right {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .nav-btn-compact {
+    padding: 0.35rem 0.6rem !important;
+    font-size: 0.75rem !important;
+  }
+
+  .nav-gh-label {
+    display: none;
+  }
+
+  /* Modals as Modern Bottom Sheet Drawers on Mobile */
+  .modal-backdrop {
+    align-items: flex-end !important;
+    padding: 0 !important;
+  }
+
+  .modal-card,
+  .workspace-drawer-card {
+    max-width: 100% !important;
+    border-radius: 18px 18px 0 0 !important;
+    border-bottom: none !important;
+    max-height: 85vh !important;
+    animation: bottomSheetUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .drawer-drag-handle {
+    display: block !important;
+    width: 44px;
+    height: 5px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 9999px;
+    margin: 0.65rem auto 0 auto;
+  }
+
+  @keyframes bottomSheetUp {
+    from {
+      transform: translateY(100%);
+      opacity: 0.4;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /* Form touch targets on phones */
+  .workspace-text-input,
+  .workspace-textarea,
+  .query-input {
+    font-size: 16px !important; /* Prevents auto-zoom in iOS Safari */
+    min-height: 44px;
+  }
+
+  /* Enhanced Mobile Action Dock */
+  .mobile-dock {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    background: rgba(15, 23, 42, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 0.45rem 0.5rem calc(env(safe-area-inset-bottom, 0px) + 0.45rem) 0.5rem;
+    z-index: 100;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .mobile-dock-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.68rem;
+    font-weight: 500;
+    padding: 0.35rem 0.2rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    min-height: 46px;
+    transition: all 0.15s ease;
+  }
+
+  .mobile-dock-btn:hover,
+  .mobile-dock-btn:active {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .mobile-dock-btn.primary {
+    color: #34d399;
+  }
+
+  .mobile-dock-btn.primary .dock-btn-icon {
+    filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.5));
+  }
+
+  .dock-btn-icon {
+    font-size: 1.15rem;
+    line-height: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .brand-title {
+    font-size: 0.88rem;
+  }
+
+  .brand-version {
+    display: none;
+  }
+
+  .table-action-group {
+    flex-direction: column;
+  }
+
+  .mobile-action-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
 

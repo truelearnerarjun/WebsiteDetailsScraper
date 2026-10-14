@@ -68,9 +68,24 @@ document.addEventListener("DOMContentLoaded", () => {
   const mobileDockCsvBtn = document.getElementById("mobile-dock-csv-btn");
   const mobileDockSyncBtn = document.getElementById("mobile-dock-sync-btn");
   const mobileDockSyncText = document.getElementById("mobile-dock-sync-text");
+  const mobileDockAddBtn = document.getElementById("mobile-dock-add-btn");
+  const mobileDockTablesBtn = document.getElementById("mobile-dock-tables-btn");
   const mobileDockViewBtn = document.getElementById("mobile-dock-view-btn");
   const mobileDockViewIcon = document.getElementById("mobile-dock-view-icon");
   const mobileDockViewText = document.getElementById("mobile-dock-view-text");
+
+  // Top Navbar Save Button & Realtime Sync Indicator
+  const navSaveBtn = document.getElementById("nav-save-btn");
+  const navSaveBtnText = document.getElementById("nav-save-btn-text");
+  const realtimeSyncBadge = document.getElementById("realtime-sync-badge");
+  const realtimeSyncText = document.getElementById("realtime-sync-text");
+
+  // In-App Confirm Delete Modal Elements
+  const confirmModal = document.getElementById("confirm-modal");
+  const confirmModalTitle = document.getElementById("confirm-modal-title");
+  const confirmModalDesc = document.getElementById("confirm-modal-desc");
+  const confirmProceedBtn = document.getElementById("confirm-proceed-btn");
+  const confirmCancelBtn = document.getElementById("confirm-cancel-btn");
 
   // Lead Workspace Drawer Modal Elements
   const leadWorkspaceModal = document.getElementById("lead-workspace-modal");
@@ -100,6 +115,65 @@ document.addEventListener("DOMContentLoaded", () => {
   const savedTablesList = document.getElementById("saved-tables-list");
   const savedTablesCount = document.getElementById("saved-tables-count");
   const activeTableBadge = document.getElementById("active-table-badge");
+
+  // Add Lead & Delete Elements
+  const navAddLeadBtn = document.getElementById("nav-add-lead-btn");
+  const addLeadBtn = document.getElementById("add-lead-btn");
+  const emptyAddLeadBtn = document.getElementById("empty-add-lead-btn");
+  const emptyCreateTableBtn = document.getElementById("empty-create-table-btn");
+  const createNewTableBtn = document.getElementById("create-new-table-btn");
+  const deleteSelectedBtn = document.getElementById("delete-selected-btn");
+  const deleteSelectedText = document.getElementById("delete-selected-text");
+  const workspaceDeleteBtn = document.getElementById("workspace-delete-btn");
+
+  // Add to Table Modal Elements
+  const addToTableBtn = document.getElementById("add-to-table-btn");
+  const addToTableText = document.getElementById("add-to-table-text");
+  const addToTableModal = document.getElementById("add-to-table-modal");
+  const addToTableForm = document.getElementById("add-to-table-form");
+  const closeAddToTableModalBtn = document.getElementById("close-add-to-table-modal-btn");
+  const cancelAddToTableBtn = document.getElementById("cancel-add-to-table-btn");
+  const addToTableLeadSummary = document.getElementById("add-to-table-lead-summary");
+  const addToTablePreview = document.getElementById("add-to-table-preview");
+  const tabChooseExistingTable = document.getElementById("tab-choose-existing-table");
+  const tabMakeNewTable = document.getElementById("tab-make-new-table");
+  const sectionExistingTable = document.getElementById("section-existing-table");
+  const sectionNewTable = document.getElementById("section-new-table");
+  const selectExistingTable = document.getElementById("select-existing-table");
+  const inputMakeNewTable = document.getElementById("input-make-new-table");
+  const switchToDestinationTable = document.getElementById("switch-to-destination-table");
+  const savedTablesDatalist = document.getElementById("saved-tables-datalist");
+  let leadsToAddToTable = [];
+  let isAddingToNewTable = false;
+
+  // New Table Modal Elements
+  const newTableModal = document.getElementById("new-table-modal");
+  const newTableForm = document.getElementById("new-table-form");
+  const newTableNameInput = document.getElementById("new-table-name-input");
+  const closeNewTableModalBtn = document.getElementById("close-new-table-modal-btn");
+  const cancelNewTableBtn = document.getElementById("cancel-new-table-btn");
+
+  // Add Lead Modal Elements
+  const addLeadModal = document.getElementById("add-lead-modal");
+  const addLeadForm = document.getElementById("add-lead-form");
+  const closeAddLeadModalBtn = document.getElementById("close-add-lead-modal-btn");
+  const cancelAddLeadBtn = document.getElementById("cancel-add-lead-btn");
+  const addLeadTableInput = document.getElementById("add-lead-table-input");
+  const addLeadNameInput = document.getElementById("add-lead-name-input");
+  const addLeadCategoryInput = document.getElementById("add-lead-category-input");
+  const addLeadPhoneInput = document.getElementById("add-lead-phone-input");
+  const addLeadEmailInput = document.getElementById("add-lead-email-input");
+  const addLeadWebsiteInput = document.getElementById("add-lead-website-input");
+  const addLeadLinkedinInput = document.getElementById("add-lead-linkedin-input");
+  const addLeadAddressInput = document.getElementById("add-lead-address-input");
+  const addLeadStatusButtons = document.querySelectorAll("#add-lead-status-selector .status-select-btn");
+  const addLeadOwnerInput = document.getElementById("add-lead-owner-input");
+  const addLeadTagsInput = document.getElementById("add-lead-tags-input");
+  const addLeadRatingInput = document.getElementById("add-lead-rating-input");
+  const addLeadReviewsInput = document.getElementById("add-lead-reviews-input");
+  const addLeadNotesInput = document.getElementById("add-lead-notes-input");
+  const addLeadSyncSupabase = document.getElementById("add-lead-sync-supabase");
+  let activeNewLeadStatus = "New";
 
   // Supabase env & table elements
   const supabaseInfoEnv = document.getElementById("supabase-info-env");
@@ -227,6 +301,176 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => {
       toast.classList.add("hidden");
     }, 2800);
+  }
+
+  // Generic In-App Confirmation Dialog (Eliminates browser window.confirm blocking)
+  function showConfirmDialog({ title, message, confirmText = "Delete Permanently" }) {
+    return new Promise((resolve) => {
+      if (!confirmModal || !confirmProceedBtn || !confirmCancelBtn) {
+        resolve(window.confirm(message));
+        return;
+      }
+      if (confirmModalTitle) confirmModalTitle.textContent = title;
+      if (confirmModalDesc) confirmModalDesc.textContent = message;
+      if (confirmProceedBtn) confirmProceedBtn.textContent = confirmText;
+
+      confirmModal.classList.remove("hidden");
+
+      const handleProceed = () => {
+        cleanup();
+        resolve(true);
+      };
+
+      const handleCancel = () => {
+        cleanup();
+        resolve(false);
+      };
+
+      const handleOverlayClick = (e) => {
+        if (e.target === confirmModal) {
+          cleanup();
+          resolve(false);
+        }
+      };
+
+      const handleKeyDown = (e) => {
+        if (e.key === "Escape") {
+          cleanup();
+          resolve(false);
+        }
+      };
+
+      function cleanup() {
+        confirmModal.classList.add("hidden");
+        confirmProceedBtn.removeEventListener("click", handleProceed);
+        confirmCancelBtn.removeEventListener("click", handleCancel);
+        confirmModal.removeEventListener("click", handleOverlayClick);
+        document.removeEventListener("keydown", handleKeyDown);
+      }
+
+      confirmProceedBtn.addEventListener("click", handleProceed, { once: true });
+      confirmCancelBtn.addEventListener("click", handleCancel, { once: true });
+      confirmModal.addEventListener("click", handleOverlayClick);
+      document.addEventListener("keydown", handleKeyDown);
+    });
+  }
+
+  // Realtime Sync Status Indicator (Header pill)
+  function setRealtimeSyncStatus(status) {
+    if (!realtimeSyncBadge || !realtimeSyncText) return;
+    if (status === "saving") {
+      realtimeSyncBadge.className = "realtime-sync-badge saving";
+      realtimeSyncText.textContent = "Saving...";
+    } else if (status === "synced") {
+      realtimeSyncBadge.className = "realtime-sync-badge saved";
+      realtimeSyncText.textContent = "Synced";
+    }
+  }
+
+  // Persist Current View & Leads to LocalStorage (Ensures Refresh F5 never loses places)
+  function saveActiveStateToStorage() {
+    try {
+      if (currentLeads && currentLeads.length > 0) {
+        localStorage.setItem("places_cached_leads", JSON.stringify(currentLeads));
+        localStorage.setItem("places_active_query", currentQuery || "");
+        localStorage.setItem("places_active_table", currentSupabaseTable || "");
+        localStorage.setItem("places_active_view", (viewTableBtn && viewTableBtn.classList.contains("active")) ? "table" : "cards");
+        localStorage.setItem("places_active_filter", selectedStatusFilter || "all");
+      } else {
+        localStorage.removeItem("places_cached_leads");
+      }
+    } catch (e) {
+      console.warn("Could not save to localStorage:", e);
+    }
+  }
+
+  function clearActiveStateFromStorage() {
+    try {
+      localStorage.removeItem("places_cached_leads");
+      localStorage.removeItem("places_active_query");
+      localStorage.removeItem("places_active_filter");
+    } catch (e) {
+      console.warn("Could not clear localStorage:", e);
+    }
+  }
+
+  // Unified Save Current Places / Edits directly to Supabase
+  async function saveCurrentLeadsToSupabase() {
+    const leadsToSave = getSelectedOrFilteredLeads();
+    if (!leadsToSave || leadsToSave.length === 0) {
+      showToast("No places match current selection or filter to save.");
+      return;
+    }
+
+    const count = leadsToSave.length;
+    const targetQuery = currentQuery || "General Places";
+    const targetTable = currentSupabaseTable || "leads_local";
+
+    setRealtimeSyncStatus("saving");
+
+    if (navSaveBtn) {
+      navSaveBtn.disabled = true;
+      if (navSaveBtnText) navSaveBtnText.textContent = `Saving (${count})...`;
+    }
+    if (saveSupabaseBtn) {
+      saveSupabaseBtn.disabled = true;
+      if (saveSupabaseText) saveSupabaseText.textContent = `Saving...`;
+    }
+    if (mobileDockSyncText) mobileDockSyncText.textContent = "Saving...";
+
+    try {
+      const res = await fetch("/api/supabase/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leads: leadsToSave,
+          query: targetQuery,
+          table: targetTable,
+        }),
+      });
+      const result = await res.json();
+      if (res.ok && result.success) {
+        showToast(`⚡ Saved ${result.count} places to '${result.table}'!`);
+        setRealtimeSyncStatus("synced");
+
+        if (navSaveBtn) {
+          navSaveBtn.classList.add("saved-success");
+          if (navSaveBtnText) navSaveBtnText.textContent = `✓ Saved (${result.count})!`;
+          setTimeout(() => {
+            navSaveBtn.classList.remove("saved-success");
+            if (navSaveBtnText) navSaveBtnText.textContent = "Save to DB";
+          }, 2800);
+        }
+
+        saveActiveStateToStorage();
+        checkSupabaseStatus(false, currentSupabaseTable);
+        fetchSavedSearches();
+      } else if (result.needs_schema) {
+        showToast(`⚠️ Table '${targetTable}' not found in Supabase. Please run the SQL schema.`);
+        openSupabaseModal();
+      } else if (!result.configured) {
+        showToast("⚠️ Supabase not configured in .env. Click Supabase to set up.");
+        openSupabaseModal();
+      } else {
+        showToast(`Supabase save error: ${result.error || "Unknown error"}`);
+      }
+    } catch (err) {
+      showToast(`Network error: ${err.message}`);
+    } finally {
+      if (navSaveBtn) navSaveBtn.disabled = false;
+      if (saveSupabaseBtn) saveSupabaseBtn.disabled = false;
+      if (mobileDockSyncText) mobileDockSyncText.textContent = "Save DB";
+      updateSelectionAndFilterUI();
+    }
+  }
+
+  if (navSaveBtn) navSaveBtn.addEventListener("click", saveCurrentLeadsToSupabase);
+  if (mobileDockSyncBtn) mobileDockSyncBtn.addEventListener("click", saveCurrentLeadsToSupabase);
+  if (mobileDockAddBtn) mobileDockAddBtn.addEventListener("click", () => openAddLeadModal());
+  if (mobileDockTablesBtn) {
+    mobileDockTablesBtn.addEventListener("click", () => {
+      if (savedTablesBtn) savedTablesBtn.click();
+    });
   }
 
   // Rating filter segmented control (Any / Under < / Over ≥ / Custom threshold)
@@ -370,6 +614,7 @@ document.addEventListener("DOMContentLoaded", () => {
       currentLeads = data.leads || [];
 
       renderResults(currentLeads);
+      saveActiveStateToStorage();
       if (data.supabase_synced) {
         showToast(`Extracted ${currentLeads.length} places (auto-synced to Supabase)`);
         checkSupabaseStatus();
@@ -521,6 +766,7 @@ document.addEventListener("DOMContentLoaded", () => {
     updatePipelineCounters();
     renderLeadView();
   }
+  const displayResults = renderResults;
 
   function getDisplayedLeads() {
     const term = filterResultsInput.value.toLowerCase().trim();
@@ -633,6 +879,26 @@ document.addEventListener("DOMContentLoaded", () => {
     if (selectAllLeadsCb) {
       selectAllLeadsCb.checked = displayed.length > 0 && displayed.every((l) => selectedLeadKeys.has(l.identity_key));
       selectAllLeadsCb.indeterminate = selCount > 0 && selCount < displayed.length;
+    }
+
+    // 6. Update Bulk Delete Selected button
+    if (deleteSelectedBtn) {
+      if (selCount > 0) {
+        deleteSelectedBtn.classList.remove("hidden");
+        if (deleteSelectedText) deleteSelectedText.textContent = `Delete Selected (${selCount})`;
+      } else {
+        deleteSelectedBtn.classList.add("hidden");
+      }
+    }
+
+    // 7. Update Add to Table button
+    if (addToTableBtn) {
+      if (selCount > 0) {
+        addToTableBtn.classList.remove("hidden");
+        if (addToTableText) addToTableText.textContent = `Add to Table (${selCount})`;
+      } else {
+        addToTableBtn.classList.add("hidden");
+      }
     }
   }
 
@@ -785,11 +1051,16 @@ document.addEventListener("DOMContentLoaded", () => {
           ${lead.google_maps_directions ? `<a href="${escapeHtml(lead.google_maps_directions)}" target="_blank" rel="noopener" class="cell-link" title="Open Google Maps Directions" style="color: var(--text-muted);">Maps ↗</a>` : ""}
         </td>
 
-        <!-- Workspace Manage Action -->
+        <!-- Workspace Manage & Delete Actions -->
         <td style="text-align: center;">
-          <button type="button" class="secondary-btn table-manage-btn" style="padding: 0.25rem 0.55rem; font-size: 0.75rem;">
-            ✏️ Manage
-          </button>
+          <div class="table-action-group">
+            <button type="button" class="secondary-btn table-manage-btn" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" title="Manage lead details">
+              ✏️ Manage
+            </button>
+            <button type="button" class="table-delete-btn" data-key="${escapeHtml(lead.identity_key)}" title="Delete lead permanently">
+              🗑️
+            </button>
+          </div>
         </td>
       `;
 
@@ -810,7 +1081,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const noteInput = tr.querySelector(".table-notes-input");
       const noteIndicator = tr.querySelector(".table-notes-save-indicator");
       if (noteInput) {
+        let noteTimer = null;
         const handleSaveNote = () => {
+          clearTimeout(noteTimer);
           const val = noteInput.value.trim();
           if (val !== (lead.notes || "")) {
             lead.notes = val;
@@ -824,6 +1097,12 @@ document.addEventListener("DOMContentLoaded", () => {
             }
           }
         };
+
+        noteInput.addEventListener("input", () => {
+          setRealtimeSyncStatus("saving");
+          clearTimeout(noteTimer);
+          noteTimer = setTimeout(handleSaveNote, 600);
+        });
 
         noteInput.addEventListener("blur", handleSaveNote);
         noteInput.addEventListener("keydown", (e) => {
@@ -846,6 +1125,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const manageBtn = tr.querySelector(".table-manage-btn");
       if (manageBtn) {
         manageBtn.addEventListener("click", () => openWorkspaceModal(lead));
+      }
+
+      // Delete button click
+      const deleteBtn = tr.querySelector(".table-delete-btn");
+      if (deleteBtn) {
+        deleteBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          deleteLead(lead);
+        });
       }
 
       // Copy phone or email on click
@@ -1024,6 +1313,9 @@ document.addEventListener("DOMContentLoaded", () => {
           <button type="button" class="mobile-action-btn manage-btn" title="Edit status, notes, tags & owner">
             <span>✏️</span> <span>Manage</span>
           </button>
+          <button type="button" class="mobile-action-btn delete-btn card-delete-btn" title="Delete lead permanently">
+            <span>🗑️</span> <span>Delete</span>
+          </button>
         </div>
       `;
 
@@ -1059,6 +1351,16 @@ document.addEventListener("DOMContentLoaded", () => {
       const manageBtn = card.querySelector(".manage-btn");
       if (manageBtn) {
         manageBtn.addEventListener("click", () => openWorkspaceModal(lead));
+      }
+
+      // Delete button click: deletes lead
+      const deleteBtn = card.querySelector(".card-delete-btn");
+      if (deleteBtn) {
+        deleteBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          deleteLead(lead);
+        });
       }
 
       cardsContainer.appendChild(card);
@@ -1350,8 +1652,495 @@ document.addEventListener("DOMContentLoaded", () => {
       if (supabaseModal && !supabaseModal.classList.contains("hidden")) {
         closeSupabaseModal();
       }
+      if (newTableModal && !newTableModal.classList.contains("hidden")) {
+        closeNewTableModal();
+      }
+      if (addLeadModal && !addLeadModal.classList.contains("hidden")) {
+        closeAddLeadModal();
+      }
     }
   });
+
+  // -------------------------------------------------------------
+  // Delete Place & Bulk Delete Functions (Permanent + Synchronized)
+  // -------------------------------------------------------------
+
+  async function deleteLead(lead, confirmed = false) {
+    if (!lead) return;
+    const name = lead.business_name || "this place";
+
+    if (!confirmed) {
+      const ok = await showConfirmDialog({
+        title: "Delete Place?",
+        message: `Are you sure you want to permanently delete "${name}" from this table and Supabase?`,
+        confirmText: "🗑️ Delete Permanently",
+      });
+      if (!ok) return;
+    }
+
+    const key = lead.identity_key;
+    currentLeads = currentLeads.filter((l) => l.identity_key !== key);
+    selectedLeadKeys.delete(key);
+
+    saveActiveStateToStorage();
+
+    if (activeWorkspaceLead && activeWorkspaceLead.identity_key === key) {
+      closeWorkspaceModal();
+    }
+
+    if (currentLeads.length === 0) {
+      clearActiveStateFromStorage();
+      resultsPanel.classList.add("hidden");
+      emptyState.classList.remove("hidden");
+      if (mobileDock) mobileDock.classList.add("hidden");
+    } else {
+      renderResults(currentLeads);
+    }
+
+    showToast(`Deleted "${name}"`);
+
+    try {
+      await fetch("/api/leads/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identity_key: key,
+          table: currentSupabaseTable || undefined,
+        }),
+      });
+      fetchSavedSearches();
+    } catch (err) {
+      console.warn("Error deleting place from Supabase:", err);
+    }
+  }
+
+  async function deleteSelectedLeads() {
+    const selKeys = Array.from(selectedLeadKeys);
+    if (selKeys.length === 0) return;
+
+    const ok = await showConfirmDialog({
+      title: `Delete ${selKeys.length} Places?`,
+      message: `Are you sure you want to permanently delete ${selKeys.length} selected place(s) from this table and Supabase?`,
+      confirmText: `🗑️ Delete ${selKeys.length} Places`,
+    });
+    if (!ok) return;
+
+    const keysSet = new Set(selKeys);
+    currentLeads = currentLeads.filter((l) => !keysSet.has(l.identity_key));
+    selectedLeadKeys.clear();
+
+    saveActiveStateToStorage();
+
+    if (currentLeads.length === 0) {
+      clearActiveStateFromStorage();
+      resultsPanel.classList.add("hidden");
+      emptyState.classList.remove("hidden");
+      if (mobileDock) mobileDock.classList.add("hidden");
+    } else {
+      renderResults(currentLeads);
+    }
+
+    showToast(`Deleted ${selKeys.length} place(s)`);
+
+    try {
+      await fetch("/api/leads/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identity_keys: selKeys,
+          table: currentSupabaseTable || undefined,
+        }),
+      });
+      fetchSavedSearches();
+    } catch (err) {
+      console.warn("Error deleting selected places:", err);
+    }
+  }
+
+  if (deleteSelectedBtn) {
+    deleteSelectedBtn.addEventListener("click", deleteSelectedLeads);
+  }
+
+  if (workspaceDeleteBtn) {
+    workspaceDeleteBtn.addEventListener("click", () => {
+      if (activeWorkspaceLead) {
+        deleteLead(activeWorkspaceLead);
+      }
+    });
+  }
+
+  // -------------------------------------------------------------
+  // New Table Modal & Creation Logic
+  // -------------------------------------------------------------
+
+  function openNewTableModal() {
+    if (savedTablesMenu) savedTablesMenu.classList.add("hidden");
+    if (newTableModal) {
+      newTableModal.classList.remove("hidden");
+      if (newTableNameInput) {
+        newTableNameInput.value = "";
+        setTimeout(() => newTableNameInput.focus(), 60);
+      }
+    }
+  }
+
+  function closeNewTableModal() {
+    if (newTableModal) newTableModal.classList.add("hidden");
+  }
+
+  if (createNewTableBtn) createNewTableBtn.addEventListener("click", openNewTableModal);
+  if (emptyCreateTableBtn) emptyCreateTableBtn.addEventListener("click", openNewTableModal);
+  if (closeNewTableModalBtn) closeNewTableModalBtn.addEventListener("click", closeNewTableModal);
+  if (cancelNewTableBtn) cancelNewTableBtn.addEventListener("click", closeNewTableModal);
+
+  if (newTableModal) {
+    newTableModal.addEventListener("click", (e) => {
+      if (e.target === newTableModal) closeNewTableModal();
+    });
+  }
+
+  if (newTableForm) {
+    newTableForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      const tableName = (newTableNameInput ? newTableNameInput.value.trim() : "");
+      if (!tableName) return;
+      closeNewTableModal();
+
+      // Switch workspace to this new table
+      currentQuery = tableName;
+      if (activeTableBadge) activeTableBadge.textContent = tableName.length > 20 ? tableName.slice(0, 18) + "…" : tableName;
+      currentLeads = [];
+      resultsPanel.classList.add("hidden");
+      emptyState.classList.remove("hidden");
+      showToast(`Table "${tableName}" selected. Add your first lead!`);
+
+      // Open Add Lead modal pre-filled with this table
+      openAddLeadModal(tableName);
+    });
+  }
+
+  // -------------------------------------------------------------
+  // Add Custom Lead Modal Logic
+  // -------------------------------------------------------------
+
+  function openAddLeadModal(defaultTable = "") {
+    if (addLeadModal) {
+      addLeadModal.classList.remove("hidden");
+      if (addLeadForm) addLeadForm.reset();
+      if (addLeadTableInput) {
+        addLeadTableInput.value = defaultTable || currentQuery || "General Leads";
+      }
+      activeNewLeadStatus = "New";
+      addLeadStatusButtons.forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.status === "New");
+      });
+      if (addLeadNameInput) {
+        setTimeout(() => addLeadNameInput.focus(), 60);
+      }
+    }
+  }
+
+  function closeAddLeadModal() {
+    if (addLeadModal) addLeadModal.classList.add("hidden");
+  }
+
+  if (navAddLeadBtn) navAddLeadBtn.addEventListener("click", () => openAddLeadModal());
+  if (addLeadBtn) addLeadBtn.addEventListener("click", () => openAddLeadModal());
+  if (emptyAddLeadBtn) emptyAddLeadBtn.addEventListener("click", () => openAddLeadModal());
+  if (closeAddLeadModalBtn) closeAddLeadModalBtn.addEventListener("click", closeAddLeadModal);
+  if (cancelAddLeadBtn) cancelAddLeadBtn.addEventListener("click", closeAddLeadModal);
+
+  if (addLeadModal) {
+    addLeadModal.addEventListener("click", (e) => {
+      if (e.target === addLeadModal) closeAddLeadModal();
+    });
+  }
+
+  // Status buttons in Add Lead modal
+  addLeadStatusButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      addLeadStatusButtons.forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeNewLeadStatus = btn.dataset.status;
+    });
+  });
+
+  if (addLeadForm) {
+    addLeadForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const bName = addLeadNameInput ? addLeadNameInput.value.trim() : "";
+      if (!bName) {
+        showToast("Business name is required");
+        if (addLeadNameInput) addLeadNameInput.focus();
+        return;
+      }
+
+      const targetTable = (addLeadTableInput ? addLeadTableInput.value.trim() : "") || currentQuery || "General Leads";
+      const leadData = {
+        business_name: bName,
+        category: addLeadCategoryInput ? addLeadCategoryInput.value.trim() : "",
+        phone: addLeadPhoneInput ? addLeadPhoneInput.value.trim() : "",
+        email: addLeadEmailInput ? addLeadEmailInput.value.trim() : "",
+        website: addLeadWebsiteInput ? addLeadWebsiteInput.value.trim() : "",
+        linkedin: addLeadLinkedinInput ? addLeadLinkedinInput.value.trim() : "",
+        address: addLeadAddressInput ? addLeadAddressInput.value.trim() : "",
+        lead_status: activeNewLeadStatus || "New",
+        owner: addLeadOwnerInput ? addLeadOwnerInput.value.trim() : "",
+        tags: addLeadTagsInput ? addLeadTagsInput.value.trim() : "",
+        review_rating: addLeadRatingInput ? addLeadRatingInput.value.trim() : "",
+        review_count: addLeadReviewsInput ? addLeadReviewsInput.value.trim() : "",
+        notes: addLeadNotesInput ? addLeadNotesInput.value.trim() : "",
+      };
+
+      const submitBtn = document.getElementById("submit-add-lead-btn");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const resp = await fetch("/api/leads/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            lead: leadData,
+            query: targetTable,
+            table: currentSupabaseTable || undefined,
+          }),
+        });
+        const res = await resp.json();
+        const createdLead = (res.success && res.lead) ? res.lead : {
+          ...leadData,
+          identity_key: "lead:" + Date.now(),
+          lead_score: (leadData.phone ? 35 : 0) + (leadData.email ? 40 : 0) + (leadData.website ? 25 : 0),
+          data_confidence: "High",
+          data_sources: "Manual Entry",
+          search_rank: "#Custom",
+        };
+
+        // Update active table / category view
+        currentQuery = targetTable;
+        if (activeTableBadge) activeTableBadge.textContent = targetTable.length > 20 ? targetTable.slice(0, 18) + "…" : targetTable;
+        currentLeads.unshift(createdLead);
+        displayResults(currentLeads);
+        saveActiveStateToStorage();
+        closeAddLeadModal();
+        fetchSavedSearches();
+        showToast(`Place "${bName}" added to "${targetTable}"!`);
+      } catch (err) {
+        console.error("Error adding lead:", err);
+        showToast(`Saved place locally`);
+        currentLeads.unshift({
+          ...leadData,
+          identity_key: "lead:" + Date.now(),
+          lead_score: 50,
+          data_confidence: "High",
+          data_sources: "Manual Entry",
+          search_rank: "#Custom",
+        });
+        displayResults(currentLeads);
+        saveActiveStateToStorage();
+        closeAddLeadModal();
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
+  // -------------------------------------------------------------
+  // Add to Table Modal Logic (Assign selected place(s) to a saved table or create a new table)
+  // -------------------------------------------------------------
+
+  function populateSavedTablesDropdowns() {
+    if (selectExistingTable) {
+      selectExistingTable.innerHTML = '<option value="">-- Choose a saved table --</option>';
+      savedSearchesList.forEach((s) => {
+        const opt = document.createElement("option");
+        opt.value = s.keyword;
+        opt.textContent = `${s.keyword} (${s.count} places)`;
+        selectExistingTable.appendChild(opt);
+      });
+    }
+    if (savedTablesDatalist) {
+      savedTablesDatalist.innerHTML = "";
+      savedSearchesList.forEach((s) => {
+        const opt = document.createElement("option");
+        opt.value = s.keyword;
+        savedTablesDatalist.appendChild(opt);
+      });
+    }
+  }
+
+  function openAddToTableModal(places) {
+    leadsToAddToTable = places && places.length > 0 ? places : getSelectedLeads();
+    if (leadsToAddToTable.length === 0) {
+      if (currentLeads.length > 0) {
+        leadsToAddToTable = getDisplayedLeads();
+      } else {
+        showToast("Please select at least one place first.");
+        return;
+      }
+    }
+
+    if (addToTableModal) {
+      addToTableModal.classList.remove("hidden");
+
+      // Update summary text
+      if (addToTableLeadSummary) {
+        if (leadsToAddToTable.length === 1) {
+          addToTableLeadSummary.textContent = `Adding place: "${leadsToAddToTable[0].business_name || 'Selected Place'}"`;
+        } else {
+          addToTableLeadSummary.textContent = `Adding ${leadsToAddToTable.length} selected places`;
+        }
+      }
+
+      // Update badge preview
+      if (addToTablePreview) {
+        addToTablePreview.innerHTML = "";
+        leadsToAddToTable.slice(0, 10).forEach((p) => {
+          const chip = document.createElement("span");
+          chip.className = "tag-badge";
+          chip.style.cssText = "display: inline-block; margin: 2px 4px 2px 0; font-size: 0.74rem;";
+          chip.textContent = p.business_name || "Place";
+          addToTablePreview.appendChild(chip);
+        });
+        if (leadsToAddToTable.length > 10) {
+          const more = document.createElement("span");
+          more.style.cssText = "color: var(--text-muted); font-size: 0.74rem;";
+          more.textContent = ` +${leadsToAddToTable.length - 10} more`;
+          addToTablePreview.appendChild(more);
+        }
+      }
+
+      // Populate existing tables dropdown
+      populateSavedTablesDropdowns();
+
+      // Reset tabs to Existing Table
+      isAddingToNewTable = false;
+      if (tabChooseExistingTable) tabChooseExistingTable.classList.add("active");
+      if (tabMakeNewTable) tabMakeNewTable.classList.remove("active");
+      if (sectionExistingTable) sectionExistingTable.classList.remove("hidden");
+      if (sectionNewTable) sectionNewTable.classList.add("hidden");
+      if (inputMakeNewTable) inputMakeNewTable.value = "";
+    }
+  }
+
+  function closeAddToTableModal() {
+    if (addToTableModal) addToTableModal.classList.add("hidden");
+    leadsToAddToTable = [];
+  }
+
+  if (tabChooseExistingTable) {
+    tabChooseExistingTable.addEventListener("click", () => {
+      isAddingToNewTable = false;
+      tabChooseExistingTable.classList.add("active");
+      if (tabMakeNewTable) tabMakeNewTable.classList.remove("active");
+      if (sectionExistingTable) sectionExistingTable.classList.remove("hidden");
+      if (sectionNewTable) sectionNewTable.classList.add("hidden");
+    });
+  }
+
+  if (tabMakeNewTable) {
+    tabMakeNewTable.addEventListener("click", () => {
+      isAddingToNewTable = true;
+      tabMakeNewTable.classList.add("active");
+      if (tabChooseExistingTable) tabChooseExistingTable.classList.remove("active");
+      if (sectionNewTable) sectionNewTable.classList.remove("hidden");
+      if (sectionExistingTable) sectionExistingTable.classList.add("hidden");
+      if (inputMakeNewTable) {
+        setTimeout(() => inputMakeNewTable.focus(), 50);
+      }
+    });
+  }
+
+  if (addToTableBtn) {
+    addToTableBtn.addEventListener("click", () => openAddToTableModal());
+  }
+
+  // When user clicks 'Add Lead', if any place is selected, open Add to Table directly!
+  // Otherwise open Add Custom Lead modal to create a place from scratch.
+  if (addLeadBtn) {
+    addLeadBtn.onclick = () => {
+      if (selectedLeadKeys.size > 0) {
+        openAddToTableModal(getSelectedLeads());
+      } else {
+        openAddLeadModal();
+      }
+    };
+  }
+
+  if (closeAddToTableModalBtn) closeAddToTableModalBtn.addEventListener("click", closeAddToTableModal);
+  if (cancelAddToTableBtn) cancelAddToTableBtn.addEventListener("click", closeAddToTableModal);
+
+  if (addToTableModal) {
+    addToTableModal.addEventListener("click", (e) => {
+      if (e.target === addToTableModal) closeAddToTableModal();
+    });
+  }
+
+  if (addToTableForm) {
+    addToTableForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!leadsToAddToTable || leadsToAddToTable.length === 0) {
+        showToast("No places selected to add");
+        return;
+      }
+
+      let targetTable = "";
+      if (isAddingToNewTable) {
+        targetTable = (inputMakeNewTable ? inputMakeNewTable.value.trim() : "");
+        if (!targetTable) {
+          showToast("Please enter a name for the new table");
+          if (inputMakeNewTable) inputMakeNewTable.focus();
+          return;
+        }
+      } else {
+        targetTable = (selectExistingTable ? selectExistingTable.value.trim() : "");
+        if (!targetTable) {
+          showToast("Please select an existing table or click 'Make New Table'");
+          if (selectExistingTable) selectExistingTable.focus();
+          return;
+        }
+      }
+
+      const submitBtn = document.getElementById("submit-add-to-table-btn");
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        const resp = await fetch("/api/leads/assign-table", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            leads: leadsToAddToTable,
+            target_table: targetTable,
+            table: currentSupabaseTable || undefined,
+          }),
+        });
+        const res = await resp.json();
+        const shouldSwitch = switchToDestinationTable ? switchToDestinationTable.checked : true;
+
+        // Update local keyword property
+        leadsToAddToTable.forEach((lead) => {
+          lead.keyword = targetTable;
+        });
+
+        closeAddToTableModal();
+        await fetchSavedSearches();
+
+        if (shouldSwitch) {
+          currentQuery = targetTable;
+          if (activeTableBadge) activeTableBadge.textContent = targetTable.length > 20 ? targetTable.slice(0, 18) + "…" : targetTable;
+          await loadLeadsFromSupabase(targetTable);
+          showToast(`Added ${leadsToAddToTable.length} place(s) and opened "${targetTable}"!`);
+        } else {
+          showToast(`Added ${leadsToAddToTable.length} place(s) to table "${targetTable}"!`);
+        }
+      } catch (err) {
+        console.error("Error assigning places to table:", err);
+        showToast("Error adding places to table");
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+      }
+    });
+  }
+
 
   function escapeHtml(str) {
     if (str === null || str === undefined) return "";
@@ -1514,6 +2303,7 @@ document.addEventListener("DOMContentLoaded", () => {
       if (res.ok && data.searches) {
         savedSearchesList = data.searches;
         renderSavedTablesMenu();
+        populateSavedTablesDropdowns();
       }
     } catch (err) {
       console.warn("Could not fetch saved searches", err);
@@ -1560,8 +2350,52 @@ document.addEventListener("DOMContentLoaded", () => {
           <span class="saved-table-name">🔍 ${escapeHtml(search.keyword)}</span>
           <span class="saved-table-meta">${escapeHtml(statusChips || "Leads")}</span>
         </div>
-        <span class="saved-table-badge">${search.count}</span>
+        <div class="saved-table-actions">
+          <span class="saved-table-badge">${search.count}</span>
+          <button type="button" class="saved-table-delete-btn" title="Delete table '${escapeHtml(search.keyword)}' and all leads">🗑️</button>
+        </div>
       `;
+
+      const deleteTableBtn = item.querySelector(".saved-table-delete-btn");
+      if (deleteTableBtn) {
+        deleteTableBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const ok = await showConfirmDialog({
+            title: `Delete Table: "${search.keyword}"?`,
+            message: `Are you sure you want to permanently delete table "${search.keyword}" and all ${search.count} place(s) in it from Supabase?`,
+            confirmText: "🗑️ Delete Table",
+          });
+          if (!ok) return;
+
+          try {
+            const resp = await fetch("/api/tables/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                keyword: search.keyword,
+                table: currentSupabaseTable || undefined,
+              }),
+            });
+            const res = await resp.json();
+            if (res.success) {
+              showToast(`Table "${search.keyword}" deleted successfully.`);
+              if (currentQuery === search.keyword || (activeTableBadge && activeTableBadge.textContent === search.keyword)) {
+                currentLeads = [];
+                clearActiveStateFromStorage();
+                resultsPanel.classList.add("hidden");
+                emptyState.classList.remove("hidden");
+                if (activeTableBadge) activeTableBadge.textContent = "Saved Tables";
+              }
+              fetchSavedSearches();
+            } else {
+              showToast(`Error deleting table: ${res.error || "Unknown"}`);
+            }
+          } catch (err) {
+            showToast("Network error deleting table");
+          }
+        });
+      }
+
       item.addEventListener("click", () => {
         if (savedTablesMenu) savedTablesMenu.classList.add("hidden");
         if (activeTableBadge) activeTableBadge.textContent = search.keyword.length > 20 ? search.keyword.slice(0, 18) + "…" : search.keyword;
@@ -1657,6 +2491,7 @@ document.addEventListener("DOMContentLoaded", () => {
         resultsPanel.classList.remove("hidden");
         emptyState.classList.add("hidden");
         renderResults(currentLeads);
+        saveActiveStateToStorage();
         showToast(`Loaded ${data.leads.length} leads for ${keyword || currentSupabaseTable}!`);
       } else if (data.leads && data.leads.length === 0) {
         showToast(`No leads found in table '${currentSupabaseTable}'${keyword ? ` for '${keyword}'` : ""}.`);
@@ -1690,6 +2525,67 @@ document.addEventListener("DOMContentLoaded", () => {
       loadLeadsFromSupabase(null);
     });
   }
+
+  // Restore state from localStorage on page refresh (F5) so nothing disappears
+  function restoreStateFromStorage() {
+    try {
+      const cachedStr = localStorage.getItem("places_cached_leads");
+      const cachedQuery = localStorage.getItem("places_active_query");
+      const cachedTable = localStorage.getItem("places_active_table");
+      const cachedView = localStorage.getItem("places_active_view");
+      const cachedFilter = localStorage.getItem("places_active_filter");
+
+      if (cachedStr) {
+        const parsed = JSON.parse(cachedStr);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          currentLeads = parsed;
+          currentQuery = cachedQuery || "Saved Places";
+          if (cachedTable) currentSupabaseTable = cachedTable;
+
+          if (queryInput && cachedQuery && !cachedQuery.startsWith("Supabase")) {
+            queryInput.value = cachedQuery;
+          }
+          if (activeTableBadge && cachedQuery) {
+            activeTableBadge.textContent = cachedQuery.length > 20 ? cachedQuery.slice(0, 18) + "…" : cachedQuery;
+          }
+
+          if (cachedFilter) {
+            selectedStatusFilter = cachedFilter;
+            document.querySelectorAll("#lead-pipeline-bar .pipeline-pill").forEach((b) => {
+              b.classList.toggle("active", b.dataset.status === cachedFilter);
+            });
+          }
+
+          resultsPanel.classList.remove("hidden");
+          emptyState.classList.add("hidden");
+          if (mobileDock) mobileDock.classList.remove("hidden");
+
+          const effectiveView = cachedView || (window.innerWidth <= 768 ? "cards" : "table");
+          setView(effectiveView);
+          renderResults(currentLeads);
+
+          // Silently revalidate against Supabase in background
+          if (cachedQuery && !cachedQuery.startsWith("Supabase")) {
+            fetch(`/api/supabase/leads?limit=500&keyword=${encodeURIComponent(cachedQuery)}`)
+              .then((r) => r.json())
+              .then((d) => {
+                if (d && d.leads && d.leads.length > 0) {
+                  currentLeads = d.leads;
+                  saveActiveStateToStorage();
+                  renderResults(currentLeads);
+                }
+              })
+              .catch(() => {});
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Could not restore state from storage:", err);
+    }
+  }
+
+  // Restore immediately on load so refresh reopens the exact same view!
+  restoreStateFromStorage();
 
   // Initialize Supabase status on page load (auto-queries environment table: 'leads' on Vercel, 'leads_local' locally)
   checkSupabaseStatus(false, null).then(() => fetchSavedSearches());

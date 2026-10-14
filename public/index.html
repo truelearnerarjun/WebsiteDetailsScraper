@@ -28,7 +28,23 @@
         </div>
       </div>
       <div class="nav-right">
-        <button type="button" id="nav-saved-tables-btn" class="secondary-btn" style="padding: 0.35rem 0.75rem; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 0.4rem;" title="View separate tables for each search">
+        <!-- Prominent Top Right Save to DB Button -->
+        <button type="button" id="nav-save-btn" class="nav-save-btn" title="Save current places and changes directly to Supabase">
+          <span class="save-btn-icon">💾</span>
+          <span id="nav-save-btn-text">Save to DB</span>
+        </button>
+
+        <!-- Realtime Auto-Sync Status Indicator -->
+        <div id="realtime-sync-badge" class="realtime-sync-badge saved" title="Auto-save status">
+          <span class="realtime-pulse-dot"></span>
+          <span id="realtime-sync-text">Synced</span>
+        </div>
+
+        <button type="button" id="nav-add-lead-btn" class="primary-btn nav-btn-compact" title="Add a place manually">
+          <span>➕</span>
+          <span>Add Place</span>
+        </button>
+        <button type="button" id="nav-saved-tables-btn" class="secondary-btn nav-btn-compact" title="View separate tables for each search">
           <span>📁</span>
           <span>Saved Tables</span>
         </button>
@@ -44,7 +60,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
           </svg>
-          <span>GitHub</span>
+          <span class="nav-gh-label">GitHub</span>
         </a>
       </div>
     </header>
@@ -197,11 +213,32 @@
                   <span>Saved Search Tables</span>
                   <span id="saved-tables-count" class="badge">0</span>
                 </div>
+                <div class="menu-action-bar">
+                  <button type="button" id="create-new-table-btn" class="menu-create-table-btn" title="Create a new table/category">
+                    <span>➕</span>
+                    <span>Create New Table</span>
+                  </button>
+                </div>
                 <div id="saved-tables-list" class="saved-tables-list">
                   <div class="menu-empty">Loading saved tables...</div>
                 </div>
               </div>
             </div>
+
+            <button type="button" id="add-lead-btn" class="secondary-btn" title="Add a new custom lead" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+              <span>➕</span>
+              <span>Add Lead</span>
+            </button>
+
+            <button type="button" id="add-to-table-btn" class="primary-btn hidden" title="Add selected lead(s) to a saved table or create a new one" style="display: inline-flex; align-items: center; gap: 0.35rem; background: var(--accent-emerald); border-color: rgba(16, 185, 129, 0.4); color: #fff;">
+              <span>📁</span>
+              <span id="add-to-table-text">Add to Table</span>
+            </button>
+
+            <button type="button" id="delete-selected-btn" class="danger-btn hidden" title="Delete selected leads permanently from table and database" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+              <span>🗑️</span>
+              <span id="delete-selected-text">Delete Selected</span>
+            </button>
 
             <input 
               type="text" 
@@ -335,7 +372,7 @@
                 <th style="min-width: 170px;">Address</th>
                 <th style="width: 100px;">Hours</th>
                 <th style="width: 110px; text-align: right;">Web / LinkedIn</th>
-                <th style="width: 80px; text-align: center;">Action</th>
+                <th style="width: 115px; text-align: center;">Actions</th>
               </tr>
             </thead>
             <tbody id="table-body"></tbody>
@@ -361,6 +398,14 @@
         <p class="empty-title">Ready to extract places</p>
         <p class="empty-desc">Enter a search keyword above or pick a preset to discover ranked listings with verified phone, emails, and full mobile lead workspace.</p>
         <div style="margin-top: 1.25rem; display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+          <button type="button" id="empty-add-lead-btn" class="primary-btn" style="padding: 0.55rem 1.1rem; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500;">
+            <span>➕</span>
+            <span>Add Lead</span>
+          </button>
+          <button type="button" id="empty-create-table-btn" class="secondary-btn" style="padding: 0.55rem 1.1rem; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500;">
+            <span>📋</span>
+            <span>Create New Table</span>
+          </button>
           <button type="button" id="empty-load-tables-btn" class="secondary-btn" style="padding: 0.55rem 1.1rem; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500;">
             <span>📁</span>
             <span>Browse Saved Tables</span>
@@ -371,17 +416,25 @@
 
     <!-- Mobile Fixed Bottom Action Dock (appears when results exist on phones) -->
     <div id="mobile-dock" class="mobile-dock hidden">
-      <button type="button" id="mobile-dock-csv-btn" class="mobile-dock-btn primary" title="Export CSV with Statuses, Notes & Tags">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-        <span>Export CSV</span>
-      </button>
-      <button type="button" id="mobile-dock-sync-btn" class="mobile-dock-btn" title="Sync Leads to Supabase">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+      <button type="button" id="mobile-dock-sync-btn" class="mobile-dock-btn primary" title="Save Places to Supabase">
+        <span class="dock-btn-icon">💾</span>
         <span id="mobile-dock-sync-text">Save DB</span>
       </button>
+      <button type="button" id="mobile-dock-add-btn" class="mobile-dock-btn" title="Add New Place">
+        <span class="dock-btn-icon">➕</span>
+        <span>Add</span>
+      </button>
+      <button type="button" id="mobile-dock-tables-btn" class="mobile-dock-btn" title="Saved Tables">
+        <span class="dock-btn-icon">📁</span>
+        <span>Tables</span>
+      </button>
       <button type="button" id="mobile-dock-view-btn" class="mobile-dock-btn" title="Switch Cards / Table View">
-        <span id="mobile-dock-view-icon">📋</span>
+        <span id="mobile-dock-view-icon" class="dock-btn-icon">📋</span>
         <span id="mobile-dock-view-text">Table</span>
+      </button>
+      <button type="button" id="mobile-dock-csv-btn" class="mobile-dock-btn" title="Export CSV">
+        <span class="dock-btn-icon">📥</span>
+        <span>CSV</span>
       </button>
     </div>
 
@@ -454,12 +507,233 @@
           </div>
 
           <div class="workspace-drawer-footer">
+            <button type="button" id="workspace-delete-btn" class="danger-btn" title="Delete this lead permanently" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+              <span>🗑️</span>
+              <span>Delete Lead</span>
+            </button>
             <span id="workspace-save-status" class="workspace-save-status"></span>
             <button type="button" id="workspace-save-btn" class="primary-btn">
               <span>Save Lead Details</span>
             </button>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Create New Table Modal -->
+    <div id="new-table-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="new-table-modal-title">
+      <div class="modal-card" style="max-width: 450px;">
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <span class="modal-icon">📋</span>
+            <h2 id="new-table-modal-title">Create New Table</h2>
+          </div>
+          <button type="button" id="close-new-table-modal-btn" class="modal-close-btn" aria-label="Close dialog">✕</button>
+        </div>
+        <form id="new-table-form" class="modal-body">
+          <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem; line-height: 1.5;">
+            Create a dedicated table category to organize your custom leads, client lists, or specific niche campaigns.
+          </p>
+          <div class="workspace-field-group">
+            <label for="new-table-name-input" class="workspace-label">Table / Category Name <span style="color: #f87171;">*</span></label>
+            <input type="text" id="new-table-name-input" class="workspace-text-input" placeholder="e.g. Real Estate Mumbai, VIP Prospects..." required />
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1.5rem;">
+            <button type="button" id="cancel-new-table-btn" class="secondary-btn">Cancel</button>
+            <button type="submit" id="submit-new-table-btn" class="primary-btn">
+              <span>➕ Create &amp; Add Leads</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Add Lead to Saved Table Modal -->
+    <div id="add-to-table-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="add-to-table-modal-title">
+      <div class="modal-card" style="max-width: 520px;">
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <span class="modal-icon">📁</span>
+            <div>
+              <h2 id="add-to-table-modal-title">Add Lead to Table</h2>
+              <div id="add-to-table-lead-summary" style="font-size: 0.76rem; color: var(--text-muted); margin-top: 2px;">Select or make a table</div>
+            </div>
+          </div>
+          <button type="button" id="close-add-to-table-modal-btn" class="modal-close-btn" aria-label="Close dialog">✕</button>
+        </div>
+        <form id="add-to-table-form" class="modal-body">
+          <!-- Selected leads chips preview -->
+          <div id="add-to-table-preview" class="add-to-table-preview-wrap" style="background: rgba(255,255,255,0.03); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 0.65rem 0.85rem; font-size: 0.82rem; margin-bottom: 1.15rem; max-height: 110px; overflow-y: auto;"></div>
+
+          <!-- Mode Picker Tabs -->
+          <div class="workspace-field-group">
+            <label class="workspace-label">Destination Table</label>
+            <div class="table-destination-tabs" style="display: flex; gap: 0.5rem; margin-bottom: 0.85rem;">
+              <button type="button" id="tab-choose-existing-table" class="pill-btn active" style="flex: 1; padding: 0.45rem; font-size: 0.8rem; text-align: center; justify-content: center;">
+                <span>📋 Existing Saved Table</span>
+              </button>
+              <button type="button" id="tab-make-new-table" class="pill-btn" style="flex: 1; padding: 0.45rem; font-size: 0.8rem; text-align: center; justify-content: center;">
+                <span>➕ Make New Table</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Section A: Existing Table Dropdown -->
+          <div id="section-existing-table" class="workspace-field-group">
+            <label for="select-existing-table" class="workspace-label">Select Table</label>
+            <select id="select-existing-table" class="workspace-text-input" style="height: 38px;">
+              <option value="">-- Choose a saved table --</option>
+            </select>
+            <span style="font-size: 0.74rem; color: var(--text-muted); margin-top: 4px; display: block;">
+              Select from your existing Supabase tables.
+            </span>
+          </div>
+
+          <!-- Section B: Make New Table Input -->
+          <div id="section-new-table" class="workspace-field-group hidden">
+            <label for="input-make-new-table" class="workspace-label">New Table / Category Name <span style="color: #f87171;">*</span></label>
+            <input type="text" id="input-make-new-table" class="workspace-text-input" placeholder="e.g. Real Estate Q4, VIP Clients..." />
+            <span style="font-size: 0.74rem; color: var(--text-muted); margin-top: 4px; display: block;">
+              Creates this new table category and adds the lead(s) into it.
+            </span>
+          </div>
+
+          <!-- Switch to destination table option -->
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
+            <input type="checkbox" id="switch-to-destination-table" checked />
+            <label for="switch-to-destination-table" style="font-size: 0.82rem; color: var(--text-secondary); cursor: pointer;">
+              Open this table immediately after adding
+            </label>
+          </div>
+
+          <!-- Submit Buttons -->
+          <div style="display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1.5rem;">
+            <button type="button" id="cancel-add-to-table-btn" class="secondary-btn">Cancel</button>
+            <button type="submit" id="submit-add-to-table-btn" class="primary-btn">
+              <span>💾 Add to Table</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- Add Custom Lead Modal -->
+    <div id="add-lead-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="add-lead-modal-title">
+      <div class="modal-card" style="max-width: 620px;">
+        <div class="modal-header">
+          <div class="modal-header-title">
+            <span class="modal-icon">➕</span>
+            <h2 id="add-lead-modal-title">Add Custom Lead</h2>
+          </div>
+          <button type="button" id="close-add-lead-modal-btn" class="modal-close-btn" aria-label="Close dialog">✕</button>
+        </div>
+        <form id="add-lead-form" class="modal-body">
+          <!-- Target Table Selection / Display -->
+          <div class="workspace-field-group">
+            <label for="add-lead-table-input" class="workspace-label">Target Table / Search Category</label>
+            <input type="text" id="add-lead-table-input" list="saved-tables-datalist" class="workspace-text-input" placeholder="Select or type a table name (e.g. General Leads, Real Estate Mumbai)" />
+            <datalist id="saved-tables-datalist"></datalist>
+          </div>
+
+          <!-- Business Name & Category -->
+          <div class="workspace-grid-2">
+            <div class="workspace-field-group">
+              <label for="add-lead-name-input" class="workspace-label">Business Name <span style="color: #f87171;">*</span></label>
+              <input type="text" id="add-lead-name-input" class="workspace-text-input" placeholder="e.g. Apex Health Clinic" required />
+            </div>
+            <div class="workspace-field-group">
+              <label for="add-lead-category-input" class="workspace-label">Category</label>
+              <input type="text" id="add-lead-category-input" class="workspace-text-input" placeholder="e.g. Clinic, Bakery, Agency" />
+            </div>
+          </div>
+
+          <!-- Phone & Email -->
+          <div class="workspace-grid-2">
+            <div class="workspace-field-group">
+              <label for="add-lead-phone-input" class="workspace-label">Phone Number(s)</label>
+              <input type="text" id="add-lead-phone-input" class="workspace-text-input" placeholder="e.g. +91 98200 12345" />
+            </div>
+            <div class="workspace-field-group">
+              <label for="add-lead-email-input" class="workspace-label">Email Address</label>
+              <input type="email" id="add-lead-email-input" class="workspace-text-input" placeholder="e.g. contact@business.com" />
+            </div>
+          </div>
+
+          <!-- Website & LinkedIn -->
+          <div class="workspace-grid-2">
+            <div class="workspace-field-group">
+              <label for="add-lead-website-input" class="workspace-label">Website URL</label>
+              <input type="url" id="add-lead-website-input" class="workspace-text-input" placeholder="https://example.com" />
+            </div>
+            <div class="workspace-field-group">
+              <label for="add-lead-linkedin-input" class="workspace-label">LinkedIn Profile</label>
+              <input type="text" id="add-lead-linkedin-input" class="workspace-text-input" placeholder="https://linkedin.com/company/..." />
+            </div>
+          </div>
+
+          <!-- Address -->
+          <div class="workspace-field-group">
+            <label for="add-lead-address-input" class="workspace-label">Physical Address / Location</label>
+            <input type="text" id="add-lead-address-input" class="workspace-text-input" placeholder="e.g. Shop 4, Sector 14, Navi Mumbai" />
+          </div>
+
+          <!-- Status Selector -->
+          <div class="workspace-field-group">
+            <label class="workspace-label">Initial Status</label>
+            <div class="workspace-status-selector" id="add-lead-status-selector">
+              <button type="button" class="status-select-btn active" data-status="New">New</button>
+              <button type="button" class="status-select-btn" data-status="Reviewed">Reviewed</button>
+              <button type="button" class="status-select-btn" data-status="Contacted">Contacted</button>
+              <button type="button" class="status-select-btn" data-status="Qualified">Qualified</button>
+              <button type="button" class="status-select-btn" data-status="Rejected">Rejected</button>
+            </div>
+          </div>
+
+          <!-- Owner & Tags -->
+          <div class="workspace-grid-2">
+            <div class="workspace-field-group">
+              <label for="add-lead-owner-input" class="workspace-label">Owner / Assignee</label>
+              <input type="text" id="add-lead-owner-input" class="workspace-text-input" placeholder="e.g. Arjun" />
+            </div>
+            <div class="workspace-field-group">
+              <label for="add-lead-tags-input" class="workspace-label">Tags (comma-separated)</label>
+              <input type="text" id="add-lead-tags-input" class="workspace-text-input" placeholder="e.g. Hot, VIP, Referral" />
+            </div>
+          </div>
+
+          <!-- Rating & Review Count -->
+          <div class="workspace-grid-2">
+            <div class="workspace-field-group">
+              <label for="add-lead-rating-input" class="workspace-label">Rating (0 - 5)</label>
+              <input type="number" step="0.1" min="0" max="5" id="add-lead-rating-input" class="workspace-text-input" placeholder="4.5" />
+            </div>
+            <div class="workspace-field-group">
+              <label for="add-lead-reviews-input" class="workspace-label">Review Count</label>
+              <input type="number" min="0" id="add-lead-reviews-input" class="workspace-text-input" placeholder="25" />
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="workspace-field-group">
+            <label for="add-lead-notes-input" class="workspace-label">Notes &amp; Details</label>
+            <textarea id="add-lead-notes-input" class="workspace-textarea" rows="3" placeholder="Initial conversation notes, quotation details..."></textarea>
+          </div>
+
+          <!-- Sync to Supabase Checkbox -->
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+            <input type="checkbox" id="add-lead-sync-supabase" checked />
+            <label for="add-lead-sync-supabase" style="font-size: 0.82rem; color: var(--text-secondary); cursor: pointer;">
+              Sync &amp; save permanently to Supabase database
+            </label>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1.5rem;">
+            <button type="button" id="cancel-add-lead-btn" class="secondary-btn">Cancel</button>
+            <button type="submit" id="submit-add-lead-btn" class="primary-btn">
+              <span>💾 Save &amp; Add Lead</span>
+            </button>
+          </div>
+        </form>
       </div>
     </div>
 
@@ -549,6 +823,25 @@ SUPABASE_AUTO_SYNC=true</code></pre>
               <button type="button" id="modal-recheck-btn" class="primary-btn">Test Live Connection</button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generic In-App Confirm Delete Modal (Replaces browser window.confirm) -->
+    <div id="confirm-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
+      <div class="modal-card confirm-modal-card" style="max-width: 440px;">
+        <div class="confirm-modal-body" style="padding: 1.5rem 1.25rem 1.25rem 1.25rem; display: flex; gap: 1rem; align-items: flex-start;">
+          <div class="confirm-icon-wrap" style="width: 44px; height: 44px; border-radius: 50%; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.35); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; flex-shrink: 0;">
+            ⚠️
+          </div>
+          <div class="confirm-text-wrap" style="flex: 1;">
+            <h3 id="confirm-modal-title" style="font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin: 0 0 0.4rem 0;">Delete Permanently?</h3>
+            <p id="confirm-modal-desc" style="font-size: 0.84rem; color: var(--text-secondary); margin: 0; line-height: 1.5;">Are you sure you want to permanently delete this item? This action cannot be undone.</p>
+          </div>
+        </div>
+        <div class="confirm-modal-actions" style="padding: 0.85rem 1.25rem 1.25rem 1.25rem; display: flex; justify-content: flex-end; gap: 0.65rem; border-top: 1px solid var(--border-subtle); background: rgba(255, 255, 255, 0.015);">
+          <button type="button" id="confirm-cancel-btn" class="secondary-btn" style="min-height: 38px; padding: 0.45rem 1rem;">Cancel</button>
+          <button type="button" id="confirm-proceed-btn" class="danger-btn" style="min-height: 38px; padding: 0.45rem 1rem;">Delete Permanently</button>
         </div>
       </div>
     </div>
