@@ -158,6 +158,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const addLeadForm = document.getElementById("add-lead-form");
   const closeAddLeadModalBtn = document.getElementById("close-add-lead-modal-btn");
   const cancelAddLeadBtn = document.getElementById("cancel-add-lead-btn");
+  const addLeadTableSelect = document.getElementById("add-lead-table-select");
+  const addLeadNewTableContainer = document.getElementById("add-lead-new-table-container");
+  const addLeadCustomTableInput = document.getElementById("add-lead-custom-table-input");
+  const btnToggleNewTable = document.getElementById("btn-toggle-new-table");
+  const btnCancelCustomTable = document.getElementById("btn-cancel-custom-table");
   const addLeadTableInput = document.getElementById("add-lead-table-input");
   const addLeadNameInput = document.getElementById("add-lead-name-input");
   const addLeadCategoryInput = document.getElementById("add-lead-category-input");
@@ -1827,9 +1832,16 @@ document.addEventListener("DOMContentLoaded", () => {
     if (addLeadModal) {
       addLeadModal.classList.remove("hidden");
       if (addLeadForm) addLeadForm.reset();
-      if (addLeadTableInput) {
-        addLeadTableInput.value = defaultTable || currentQuery || "General Leads";
-      }
+
+      const chosenTable = defaultTable || currentQuery || (savedSearchesList && savedSearchesList[0] ? savedSearchesList[0].keyword : "General Leads");
+
+      // Ensure dropdown is populated with all DB tables
+      populateSavedTablesDropdowns(chosenTable);
+
+      if (addLeadNewTableContainer) addLeadNewTableContainer.classList.add("hidden");
+      if (addLeadCustomTableInput) addLeadCustomTableInput.value = "";
+      if (addLeadTableInput) addLeadTableInput.value = chosenTable;
+
       activeNewLeadStatus = "New";
       addLeadStatusButtons.forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.status === "New");
@@ -1837,6 +1849,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (addLeadNameInput) {
         setTimeout(() => addLeadNameInput.focus(), 60);
       }
+      // Re-fetch in background to ensure fresh data from DB
+      fetchSavedSearches();
     }
   }
 
@@ -1853,6 +1867,42 @@ document.addEventListener("DOMContentLoaded", () => {
   if (addLeadModal) {
     addLeadModal.addEventListener("click", (e) => {
       if (e.target === addLeadModal) closeAddLeadModal();
+    });
+  }
+
+  // Toggle custom table input in Add Custom Lead modal
+  if (addLeadTableSelect) {
+    addLeadTableSelect.addEventListener("change", () => {
+      if (addLeadTableSelect.value === "__create_new__") {
+        if (addLeadNewTableContainer) addLeadNewTableContainer.classList.remove("hidden");
+        if (addLeadCustomTableInput) {
+          setTimeout(() => addLeadCustomTableInput.focus(), 50);
+        }
+      } else {
+        if (addLeadNewTableContainer) addLeadNewTableContainer.classList.add("hidden");
+        if (addLeadTableInput) addLeadTableInput.value = addLeadTableSelect.value;
+      }
+    });
+  }
+
+  if (btnToggleNewTable) {
+    btnToggleNewTable.addEventListener("click", () => {
+      if (addLeadNewTableContainer) {
+        addLeadNewTableContainer.classList.remove("hidden");
+        if (addLeadTableSelect) addLeadTableSelect.value = "__create_new__";
+        if (addLeadCustomTableInput) setTimeout(() => addLeadCustomTableInput.focus(), 50);
+      }
+    });
+  }
+
+  if (btnCancelCustomTable) {
+    btnCancelCustomTable.addEventListener("click", () => {
+      if (addLeadNewTableContainer) addLeadNewTableContainer.classList.add("hidden");
+      if (addLeadTableSelect) {
+        const fallback = currentQuery || (savedSearchesList && savedSearchesList[0] ? savedSearchesList[0].keyword : "General Leads");
+        addLeadTableSelect.value = fallback;
+        if (addLeadTableInput) addLeadTableInput.value = fallback;
+      }
     });
   }
 
@@ -1875,7 +1925,22 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      const targetTable = (addLeadTableInput ? addLeadTableInput.value.trim() : "") || currentQuery || "General Leads";
+      let targetTable = "";
+      if (addLeadTableSelect && addLeadTableSelect.value === "__create_new__") {
+        targetTable = addLeadCustomTableInput ? addLeadCustomTableInput.value.trim() : "";
+        if (!targetTable) {
+          showToast("Please enter a name for the new table");
+          if (addLeadCustomTableInput) addLeadCustomTableInput.focus();
+          return;
+        }
+      } else if (addLeadTableSelect && addLeadTableSelect.value) {
+        targetTable = addLeadTableSelect.value.trim();
+      } else if (addLeadTableInput && addLeadTableInput.value.trim()) {
+        targetTable = addLeadTableInput.value.trim();
+      } else {
+        targetTable = currentQuery || "General Leads";
+      }
+
       const leadData = {
         business_name: bName,
         category: addLeadCategoryInput ? addLeadCategoryInput.value.trim() : "",
@@ -1923,7 +1988,7 @@ document.addEventListener("DOMContentLoaded", () => {
         saveActiveStateToStorage();
         closeAddLeadModal();
         fetchSavedSearches();
-        showToast(`Place "${bName}" added to "${targetTable}"!`);
+        showToast(`Place "${bName}" added to table "${targetTable}"!`);
       } catch (err) {
         console.error("Error adding lead:", err);
         showToast(`Saved place locally`);
@@ -1948,16 +2013,69 @@ document.addEventListener("DOMContentLoaded", () => {
   // Add to Table Modal Logic (Assign selected place(s) to a saved table or create a new table)
   // -------------------------------------------------------------
 
-  function populateSavedTablesDropdowns() {
+  function populateSavedTablesDropdowns(preferredSelection = "") {
+    const targetSelected = preferredSelection || currentQuery || "General Leads";
+
+    // 1. In Add to Table Modal
     if (selectExistingTable) {
       selectExistingTable.innerHTML = '<option value="">-- Choose a saved table --</option>';
       savedSearchesList.forEach((s) => {
         const opt = document.createElement("option");
         opt.value = s.keyword;
         opt.textContent = `${s.keyword} (${s.count} places)`;
+        if (s.keyword === targetSelected) opt.selected = true;
         selectExistingTable.appendChild(opt);
       });
     }
+
+    // 2. In Add Custom Lead Modal (shows all saved DB tables + create new option)
+    if (addLeadTableSelect) {
+      addLeadTableSelect.innerHTML = "";
+      let hasSelected = false;
+
+      if (savedSearchesList && savedSearchesList.length > 0) {
+        const group = document.createElement("optgroup");
+        group.label = "📁 Saved Tables in Database";
+        
+        savedSearchesList.forEach((s) => {
+          const opt = document.createElement("option");
+          opt.value = s.keyword;
+          opt.textContent = `📁 ${s.keyword} (${s.count} place${s.count === 1 ? '' : 's'})`;
+          if (s.keyword === targetSelected) {
+            opt.selected = true;
+            hasSelected = true;
+          }
+          group.appendChild(opt);
+        });
+        addLeadTableSelect.appendChild(group);
+
+        // Include General Leads if not in list
+        if (!savedSearchesList.some(s => s.keyword.toLowerCase() === "general leads")) {
+          const genOpt = document.createElement("option");
+          genOpt.value = "General Leads";
+          genOpt.textContent = "📁 General Leads";
+          if (targetSelected === "General Leads" && !hasSelected) {
+            genOpt.selected = true;
+            hasSelected = true;
+          }
+          group.appendChild(genOpt);
+        }
+      } else {
+        const defOpt = document.createElement("option");
+        defOpt.value = "General Leads";
+        defOpt.textContent = "📁 General Leads (Default)";
+        defOpt.selected = true;
+        addLeadTableSelect.appendChild(defOpt);
+      }
+
+      // Option to create a new table
+      const newTableOpt = document.createElement("option");
+      newTableOpt.value = "__create_new__";
+      newTableOpt.textContent = "➕ + Create New Table...";
+      addLeadTableSelect.appendChild(newTableOpt);
+    }
+
+    // 3. Fallback datalist
     if (savedTablesDatalist) {
       savedTablesDatalist.innerHTML = "";
       savedSearchesList.forEach((s) => {
@@ -1965,6 +2083,9 @@ document.addEventListener("DOMContentLoaded", () => {
         opt.value = s.keyword;
         savedTablesDatalist.appendChild(opt);
       });
+      const genOpt = document.createElement("option");
+      genOpt.value = "General Leads";
+      savedTablesDatalist.appendChild(genOpt);
     }
   }
 
@@ -2399,7 +2520,7 @@ document.addEventListener("DOMContentLoaded", () => {
       item.addEventListener("click", () => {
         if (savedTablesMenu) savedTablesMenu.classList.add("hidden");
         if (activeTableBadge) activeTableBadge.textContent = search.keyword.length > 20 ? search.keyword.slice(0, 18) + "…" : search.keyword;
-        loadLeadsFromSupabase(search.keyword);
+        loadLeadsFromSupabase(search.keyword, search.table);
       });
       savedTablesList.appendChild(item);
     });
@@ -2467,13 +2588,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Load leads from Supabase (supports specific keyword table separation)
-  async function loadLeadsFromSupabase(keyword = null) {
+  // Load leads from Supabase (supports specific keyword table separation and table override)
+  async function loadLeadsFromSupabase(keyword = null, tableOverride = null) {
     closeSupabaseModal();
-    const queryDesc = keyword ? `'${keyword}'` : `all in '${currentSupabaseTable}'`;
+    const effectiveTable = tableOverride || currentSupabaseTable;
+    const queryDesc = keyword ? `'${keyword}'` : `all in '${effectiveTable}'`;
     showToast(`Fetching ${queryDesc}...`);
     try {
-      let url = `/api/supabase/leads?limit=500&table=${encodeURIComponent(currentSupabaseTable)}`;
+      let url = `/api/supabase/leads?limit=500&table=${encodeURIComponent(effectiveTable)}`;
       if (keyword) {
         url += `&keyword=${encodeURIComponent(keyword)}`;
       }

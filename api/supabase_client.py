@@ -505,7 +505,6 @@ def fetch_saved_leads(query: str = "", keyword: str = "", limit: int = 500, min_
     if not cfg["url"] or not cfg["key"]:
         return []
 
-    endpoint = f"{cfg['url']}/rest/v1/{cfg['table']}"
     headers = {
         "apikey": cfg["key"],
         "Authorization": f"Bearer {cfg['key']}",
@@ -530,25 +529,34 @@ def fetch_saved_leads(query: str = "", keyword: str = "", limit: int = 500, min_
             # Query match on keyword or business fields
             params["or"] = f"(keyword.ilike.*{clean_q}*,business_name.ilike.*{clean_q}*,category.ilike.*{clean_q}*,address.ilike.*{clean_q}*)"
 
-    try:
-        resp = requests.get(endpoint, headers=headers, params=params, timeout=12)
-        if resp.status_code in (200, 206):
-            return resp.json()
-        return []
-    except requests.exceptions.RequestException:
-        return []
+    # Check requested table first; if empty and keyword/query provided, fallback to alternate table
+    tables_to_check = [cfg["table"]]
+    for alt in ["leads", "leads_local"]:
+        if alt not in tables_to_check:
+            tables_to_check.append(alt)
+
+    for t in tables_to_check:
+        endpoint = f"{cfg['url']}/rest/v1/{t}"
+        try:
+            resp = requests.get(endpoint, headers=headers, params=params, timeout=12)
+            if resp.status_code in (200, 206):
+                data = resp.json()
+                if data or (not keyword and not query):
+                    return data
+        except requests.exceptions.RequestException:
+            continue
+    return []
 
 
 def get_saved_searches(table: str | None = None) -> list:
     """
-    Return all distinct saved searches/categories in the table with lead counts and timestamps.
-    Enables user to see and switch between searches without table collision.
+    Return all distinct saved searches/categories across Supabase tables with lead counts and timestamps.
+    Enables user to see all tables saved in the DB without table collision.
     """
     cfg = get_supabase_config(table_override=table)
     if not cfg["url"] or not cfg["key"]:
         return []
 
-    endpoint = f"{cfg['url']}/rest/v1/{cfg['table']}"
     headers = {
         "apikey": cfg["key"],
         "Authorization": f"Bearer {cfg['key']}",
@@ -557,32 +565,46 @@ def get_saved_searches(table: str | None = None) -> list:
         "select": "keyword,created_at,lead_status",
         "limit": "1000",
     }
+
+    tables_to_check = [cfg["table"]]
+    for alt in ["leads", "leads_local"]:
+        if alt not in tables_to_check:
+            tables_to_check.append(alt)
+
     try:
         from collections import defaultdict
-        resp = requests.get(endpoint, headers=headers, params=params, timeout=10)
-        if resp.status_code in (200, 206):
-            data = resp.json()
-            groups = defaultdict(lambda: {"count": 0, "last_created": "", "statuses": defaultdict(int)})
-            for row in data:
-                kw = (row.get("keyword") or "").strip() or "General Leads"
-                groups[kw]["count"] += 1
-                s = row.get("lead_status") or "New"
-                groups[kw]["statuses"][s] += 1
-                ca = row.get("created_at") or ""
-                if ca > groups[kw]["last_created"]:
-                    groups[kw]["last_created"] = ca
+        groups = defaultdict(lambda: {"count": 0, "last_created": "", "statuses": defaultdict(int), "table": cfg["table"]})
+        
+        for t in tables_to_check:
+            endpoint = f"{cfg['url']}/rest/v1/{t}"
+            try:
+                resp = requests.get(endpoint, headers=headers, params=params, timeout=10)
+                if resp.status_code in (200, 206):
+                    data = resp.json()
+                    for row in data:
+                        kw = (row.get("keyword") or "").strip()
+                        if not kw:
+                            continue
+                        groups[kw]["count"] += 1
+                        s = row.get("lead_status") or "New"
+                        groups[kw]["statuses"][s] += 1
+                        ca = row.get("created_at") or ""
+                        if ca > groups[kw]["last_created"]:
+                            groups[kw]["last_created"] = ca
+                            groups[kw]["table"] = t
+            except Exception:
+                continue
 
-            result = []
-            for kw, info in sorted(groups.items(), key=lambda x: x[1]["last_created"], reverse=True):
-                result.append({
-                    "keyword": kw,
-                    "table": cfg["table"],
-                    "count": info["count"],
-                    "last_created": info["last_created"],
-                    "statuses": dict(info["statuses"]),
-                })
-            return result
-        return []
+        result = []
+        for kw, info in sorted(groups.items(), key=lambda x: x[1]["last_created"], reverse=True):
+            result.append({
+                "keyword": kw,
+                "table": info["table"],
+                "count": info["count"],
+                "last_created": info["last_created"],
+                "statuses": dict(info["statuses"]),
+            })
+        return result
     except Exception:
         return []
 
@@ -602,7 +624,6 @@ def delete_table(keyword: str, table: str | None = None) -> dict:
     if not clean_kw:
         return {"success": False, "error": "Table name (keyword) is required for deletion"}
 
-    endpoint = f"{cfg['url']}/rest/v1/{cfg['table']}"
     headers = {
         "apikey": cfg["key"],
         "Authorization": f"Bearer {cfg['key']}",
@@ -610,23 +631,32 @@ def delete_table(keyword: str, table: str | None = None) -> dict:
     }
     params = {"keyword": f"eq.{clean_kw}"}
 
-    try:
-        resp = requests.delete(endpoint, headers=headers, params=params, timeout=15)
-        if resp.status_code in (200, 204):
-            deleted = resp.json() if resp.text else []
-            count = len(deleted) if isinstance(deleted, list) else 0
-            return {
-                "success": True,
-                "deleted_count": count,
-                "table": cfg["table"],
-                "keyword": clean_kw,
-                "message": f"Table '{clean_kw}' ({count} leads) deleted successfully from Supabase table '{cfg['table']}'",
-            }
-        return {
-            "success": False,
-            "table": cfg["table"],
-            "error": f"Supabase delete table error ({resp.status_code}): {resp.text[:200]}",
-        }
-    except requests.exceptions.RequestException as exc:
-        return {"success": False, "error": f"Network error deleting table: {str(exc)}"}
+    tables_to_check = [cfg["table"]]
+    for alt in ["leads", "leads_local"]:
+        if alt not in tables_to_check:
+            tables_to_check.append(alt)
+
+    total_deleted = 0
+    success_table = cfg["table"]
+
+    for t in tables_to_check:
+        endpoint = f"{cfg['url']}/rest/v1/{t}"
+        try:
+            resp = requests.delete(endpoint, headers=headers, params=params, timeout=15)
+            if resp.status_code in (200, 204):
+                deleted = resp.json() if resp.text else []
+                cnt = len(deleted) if isinstance(deleted, list) else 0
+                total_deleted += cnt
+                if cnt > 0:
+                    success_table = t
+        except requests.exceptions.RequestException:
+            continue
+
+    return {
+        "success": True,
+        "deleted_count": total_deleted,
+        "table": success_table,
+        "keyword": clean_kw,
+        "message": f"Table '{clean_kw}' ({total_deleted} leads) deleted successfully from Supabase",
+    }
 

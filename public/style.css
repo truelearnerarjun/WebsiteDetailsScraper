@@ -1869,6 +1869,13 @@ body {
   border-color: var(--border-active);
 }
 
+select.workspace-text-input option,
+select.workspace-text-input optgroup {
+  background: #181920;
+  color: #f1f5f9;
+  padding: 8px 10px;
+}
+
 .workspace-textarea {
   width: 100%;
   background: var(--bg-input);

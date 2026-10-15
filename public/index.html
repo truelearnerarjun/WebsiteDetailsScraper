@@ -630,8 +630,27 @@
         <form id="add-lead-form" class="modal-body">
           <!-- Target Table Selection / Display -->
           <div class="workspace-field-group">
-            <label for="add-lead-table-input" class="workspace-label">Target Table / Search Category</label>
-            <input type="text" id="add-lead-table-input" list="saved-tables-datalist" class="workspace-text-input" placeholder="Select or type a table name (e.g. General Leads, Real Estate Mumbai)" />
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <label for="add-lead-table-select" class="workspace-label" style="margin-bottom: 0;">Target Table / Search Category <span style="color: #f87171;">*</span></label>
+              <button type="button" id="btn-toggle-new-table" class="link-btn" style="font-size: 0.78rem; color: var(--accent-cyan); cursor: pointer; background: none; border: none; padding: 0; text-decoration: underline; font-weight: 500;">
+                ➕ Create New Table
+              </button>
+            </div>
+            <!-- Saved Tables dropdown populated with all DB tables -->
+            <select id="add-lead-table-select" class="workspace-text-input" style="height: 42px; cursor: pointer; font-size: 0.88rem; background-color: rgba(255,255,255,0.04);">
+              <option value="">Loading tables from database...</option>
+            </select>
+            <!-- Hidden custom table name input -->
+            <div id="add-lead-new-table-container" class="hidden" style="margin-top: 8px;">
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="add-lead-custom-table-input" class="workspace-text-input" placeholder="Type new table name (e.g. Dentists Delhi)..." />
+                <button type="button" id="btn-cancel-custom-table" class="secondary-btn" style="padding: 0 12px; font-size: 0.78rem; white-space: nowrap;">
+                  Choose Existing
+                </button>
+              </div>
+            </div>
+            <!-- Keep hidden input & datalist for backwards compatibility -->
+            <input type="hidden" id="add-lead-table-input" />
             <datalist id="saved-tables-datalist"></datalist>
           </div>
 
