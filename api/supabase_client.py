@@ -14,6 +14,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def get_allowed_tables() -> set:
+    """
+    Tables a client request is allowed to target via the `table` parameter.
+    Defaults to the two built-in tables plus SUPABASE_TABLE; extend with
+    SUPABASE_ALLOWED_TABLES (comma-separated) if you add more.
+    """
+    allowed = {"leads", "leads_local"}
+    configured = (os.getenv("SUPABASE_TABLE") or "").strip()
+    if configured:
+        allowed.add(configured)
+    extra = os.getenv("SUPABASE_ALLOWED_TABLES") or ""
+    allowed.update(t.strip() for t in extra.split(",") if t.strip())
+    return allowed
+
+
 def get_supabase_config(table_override: str | None = None) -> dict:
     """
     Return configured Supabase settings from environment.
@@ -39,7 +54,7 @@ def get_supabase_config(table_override: str | None = None) -> dict:
     env = (os.getenv("APP_ENV") or ("production" if is_vercel else "local")).strip().lower()
     is_local = (env in ("local", "dev", "development") and not is_vercel)
 
-    if table_override and table_override.strip():
+    if table_override and table_override.strip() and table_override.strip() in get_allowed_tables():
         table = table_override.strip()
     else:
         configured = (os.getenv("SUPABASE_TABLE") or "").strip()

@@ -1,4 +1,5 @@
 import csv
+import hmac
 import json
 import os
 import re
@@ -698,12 +699,72 @@ def discover_places(query: str, max_results: int = 30, mode: str = "places", min
     return add_lead_intelligence(enriched)[:max_results], meta
 
 
-# Global CORS handler for all responses
+# ---------------------------------------------------------------------------
+# Security: password gate + CORS allowlist
+# ---------------------------------------------------------------------------
+# Routes under /api/ that stay public (no secrets, no DB writes).
+PUBLIC_API_PATHS = {"/api", "/api/health"}
+
+
+def _is_vercel() -> bool:
+    return bool(
+        os.getenv("VERCEL") == "1"
+        or os.getenv("VERCEL_ENV")
+        or os.getenv("VERCEL_URL")
+    )
+
+
+@app.before_request
+def require_app_password():
+    """
+    Every /api/* request must send header `X-App-Token: <APP_PASSWORD>`.
+    - APP_PASSWORD set      -> enforced everywhere.
+    - APP_PASSWORD missing  -> blocked on Vercel (fail closed), allowed locally for dev.
+    """
+    path = request.path.rstrip("/") or "/"
+    if not path.startswith("/api") or path in PUBLIC_API_PATHS:
+        return None
+    if request.method == "OPTIONS":
+        return None
+
+    expected = (os.getenv("APP_PASSWORD") or "").strip()
+    if not expected:
+        if _is_vercel():
+            return jsonify({
+                "success": False,
+                "error": "Server misconfigured: APP_PASSWORD is not set. API is locked.",
+            }), 503
+        return None  # local dev without a password
+
+    provided = (request.headers.get("X-App-Token") or "").strip()
+    if not provided or not hmac.compare_digest(provided.encode(), expected.encode()):
+        return jsonify({"success": False, "auth_required": True, "error": "Unauthorized"}), 401
+    return None
+
+
+@app.route("/api/auth/check", methods=["GET", "POST"])
+def auth_check():
+    """Reaching this handler means the before_request gate accepted the token."""
+    return jsonify({
+        "success": True,
+        "password_required": bool((os.getenv("APP_PASSWORD") or "").strip()),
+    })
+
+
 @app.after_request
 def add_cors_headers(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    """
+    The frontend is served from the same origin, so no CORS headers are needed.
+    Only echo the Origin back if it's explicitly listed in ALLOWED_ORIGINS
+    (comma-separated), e.g. ALLOWED_ORIGINS=https://myapp.vercel.app
+    """
+    origin = request.headers.get("Origin", "")
+    allowed = {o.strip().rstrip("/") for o in (os.getenv("ALLOWED_ORIGINS") or "").split(",") if o.strip()}
+    if origin and origin.rstrip("/") in allowed:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Vary"] = "Origin"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PATCH, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, X-App-Token"
     return response
 
 
